@@ -47,6 +47,13 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
   (그래프가 하나뿐이어도 화면 아래까지; 목록은 창의 1/3까지만 자리를 잡고 나머지는 스크롤).
   주의: `tools/shot.py`의 헤드리스 캡처는 실제 뷰포트가 캡처보다 낮아 세로 채움을 볼 때는 부정확하다. Browser 창에서 수치로 확인.
 
+- 0.3.2 (2026-11-12): 작업 표시줄 아이콘이 흐리고 작게 나오던 문제. Edge 앱 창은 창 아이콘을 16px 파비콘을 키워서 만든다.
+  → `winicon.py`가 `mpc.ico`를 Windows가 요구하는 크기(SM_CXICON/SM_CXSMICON)로 읽어 그 창에 `WM_SETICON`으로 넘기고,
+  브라우저가 되돌리면 다시 넘긴다 (제목이 프로그램 제목과 같은 msedge/chrome 창만). 로그: `window icon set`.
+  작업 표시줄에서 실제로 선명해졌는지는 오너 확인 필요 (숨은 데스크톱에는 작업 표시줄이 없어 직접 못 봄).
+  탐색기의 exe 아이콘이 예전 것으로 남는 것은 Windows 아이콘 캐시: `build.ps1`이 빌드 후 SHChangeNotify로 알리고,
+  수동으로는 `python tools/shell_icon.py <exe> <out.png> --refresh --all`.
+
 ## 구조
 - `src/mpc/` 본체, **표준 라이브러리만** 사용.
   - `osudb.py` osu!.db 파싱(mania만) + db에 없는 Songs 폴더는 직접 읽기. 읽기 전용.

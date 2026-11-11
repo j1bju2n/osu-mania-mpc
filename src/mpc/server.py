@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import APP_BYLINE, APP_NAME, __version__, paths
 from .core import ASSET_TYPES, Core, ExportError
+from .winicon import WindowIcon
 
 log = logging.getLogger('mpc.server')
 STATIC = {'/': 'index.html', '/app.css': 'app.css', '/app.js': 'app.js', '/editor.js': 'editor.js',
@@ -295,6 +296,7 @@ class App:
         self._held_once = False
         self._lock = threading.Lock()
         self.window = None
+        self.icon = WindowIcon(paths.web_dir() / 'mpc.ico', '%s %s' % (APP_NAME, APP_BYLINE))
 
     def touch(self):
         self._last_seen = time.monotonic()
@@ -321,6 +323,8 @@ class App:
         if self.window is None:
             log.info('no Edge/Chrome found: opening the default browser')
             webbrowser.open(self.url)
+        else:
+            self.icon.start()                    # the taskbar icon at its real size, not the 16 px favicon
 
     def wait(self):
         """Return when the window is gone: its held connection closed and it stopped calling."""
@@ -344,6 +348,7 @@ class App:
 
     def close(self):
         self._done.set()
+        self.icon.stop()
         self.core.shutdown()
         self.httpd.shutdown()
         self.httpd.server_close()

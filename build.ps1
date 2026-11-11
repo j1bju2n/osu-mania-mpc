@@ -44,6 +44,10 @@ finally {
     Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
 }
 
+# Explorer keeps icons by path: tell it this file changed, or it goes on showing the previous build's icon
+Add-Type -Namespace MpcBuild -Name Shell -MemberDefinition '[DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern void SHChangeNotify(int eventId, uint flags, string item1, IntPtr item2);'
+[MpcBuild.Shell]::SHChangeNotify(0x2000, 0x1005, (Join-Path $out 'Osu!Mania MPC.exe'), [IntPtr]::Zero)
+
 # ffmpeg next to the exe
 $ffTarget = Join-Path $out 'ffmpeg.exe'
 if (-not (Test-Path $ffTarget)) {
