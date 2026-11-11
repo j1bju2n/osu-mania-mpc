@@ -465,7 +465,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .66); }
 .dn.small img { width: 16px; height: 16px; }
 
 .packview { overflow-y: auto; }
-.pv { max-width: 1200px; margin: 0 auto; padding: 26px 32px 60px; }
+.pv { max-width: 1200px; margin: 0 auto; padding: 26px 32px 28px; }
 .pv-head { display: flex; align-items: flex-end; gap: 16px; }
 #pvTitle { font-size: 30px; font-weight: 700; line-height: 1.25; margin-top: 2px; }
 #pvTitle.unset { color: var(--ink-3); font-weight: 400; }

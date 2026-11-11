@@ -42,6 +42,11 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
   - 썸네일이 없는 맵은 그림 자리에 "썸네일 없음" (`thumbBox`, 편집기 캔버스는 `render(..., preview=true)`. 내보내는 그림에는 넣지 않는다).
   - **공유용**: `build.ps1`이 `output\Osu!Mania MPC v<버전>.zip`을 만든다 (exe + ffmpeg.exe + README + licenses). 오너는 이 zip만 보내면 된다.
 
+- 0.3.1 (2026-11-12): 프로그램 아이콘을 오너가 준 그림으로 교체 (`docs/icon-source.webp` → `python tools/make_icon.py` →
+  `src/mpc/web/mpc.ico`, exe 아이콘과 창 파비콘이 같은 파일). 팩 구성 그래프는 창에 남는 높이를 채운다
+  (그래프가 하나뿐이어도 화면 아래까지; 목록은 창의 1/3까지만 자리를 잡고 나머지는 스크롤).
+  주의: `tools/shot.py`의 헤드리스 캡처는 실제 뷰포트가 캡처보다 낮아 세로 채움을 볼 때는 부정확하다. Browser 창에서 수치로 확인.
+
 ## 구조
 - `src/mpc/` 본체, **표준 라이브러리만** 사용.
   - `osudb.py` osu!.db 파싱(mania만) + db에 없는 Songs 폴더는 직접 읽기. 읽기 전용.

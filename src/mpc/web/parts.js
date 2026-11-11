@@ -142,6 +142,7 @@
     const fams = info.mode === 'rice' ? ['rice'] : info.mode === 'ln' ? ['ln', 'rice'] : ['rice', 'ln'];
     const majorityKeys = p.entries.length ? p.entries.map(e => e.meta.keys).sort((a, b) =>
       p.entries.filter(e => e.meta.keys === b).length - p.entries.filter(e => e.meta.keys === a).length)[0] : 4;
+    const pending = [];                                // drawn last, once the room left for them is known
     for (const fam of fams) {
       const points = [];
       p.entries.forEach((e, i) => {
@@ -161,10 +162,10 @@
       const area = el('div', 'pv-chartarea');
       card.append(head, area);
       charts.append(card);
-      lineChart(area, { points: minor ? points.map(pt => Object.assign(pt, { main: true, out: false })) : points,
-        slots: n, family: fam, keys: majorityKeys, median: minor ? null : info.medians[fam], height: minor ? 170 : 270,
+      pending.push({ area, minor, options: { points: minor ? points.map(pt => Object.assign(pt, { main: true, out: false })) : points,
+        slots: n, family: fam, keys: majorityKeys, median: minor ? null : info.medians[fam],
         label: famName(fam) + ' 그래프', xLabel: i => String(i + 1),
-        onPick: (pt, dot) => showPop(pt.data, p.entries.indexOf(pt.data), dot) });
+        onPick: (pt, dot) => showPop(pt.data, p.entries.indexOf(pt.data), dot) } });
     }
 
     const list = $('pvList');
@@ -194,6 +195,21 @@
       li.addEventListener('keydown', ev => { if (ev.key === 'Enter') open(); });
       list.append(li);
     });
+
+    /* The charts take the height the window has left, so that one chart alone fills the page the way
+       two do. A long list keeps only a third of the window; the rest of it is reached by scrolling. */
+    if (pending.length) {
+      const view = $('view-pack'), body = view.querySelector('.pv');
+      const listShown = Math.min(list.offsetHeight, view.clientHeight * 0.34);
+      const spare = view.clientHeight - (body.scrollHeight - list.offsetHeight + listShown);   // chart areas are still empty
+      const weight = c => (c.minor ? 0.6 : 1);
+      const total = pending.reduce((sum, c) => sum + weight(c), 0);
+      const room = clamp(spare, pending.length * 190, 780);
+      for (const c of pending) {
+        c.options.height = Math.round(Math.max(c.minor ? 150 : 200, room * weight(c) / total));
+        lineChart(c.area, c.options);
+      }
+    }
   }
 
   function sortPack() {
