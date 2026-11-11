@@ -187,6 +187,16 @@ class Core:
         except OSError:
             return False
 
+    def backup_project(self):
+        """Keep the project as it is now in project.backup.json (called before it is cleared)."""
+        try:
+            source = paths.project_path()
+            if source.is_file():
+                shutil.copyfile(str(source), str(source.with_name('project.backup.json')))
+            return True
+        except OSError:
+            return False
+
     def store_asset(self, name, data):
         ext = os.path.splitext(name or '')[1].lower()
         if ext not in ASSET_TYPES or not data:

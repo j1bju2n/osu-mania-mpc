@@ -79,8 +79,7 @@
   function showPop(e, index, anchor) {
     const pop = $('pvPop'), d = M.dansOf(e);
     pop.textContent = '';
-    const th = el('div', 'pop-thumb');
-    if (e.meta.hasBg) th.style.backgroundImage = 'url("' + M.bgSrc(e.md5) + '")';
+    const th = M.thumbBox('div', 'pop-thumb', e.md5, e.meta.hasBg);
     const body = el('div', 'pop-body');
     body.append(el('strong', null, (index + 1) + '. ' + e.meta.title), el('span', 'dim', e.meta.version));
     const facts = el('span', 'pop-facts num');
@@ -173,8 +172,7 @@
     p.entries.forEach((e, i) => {
       const d = M.dansOf(e), li = el('li', info.out.has(e.uid) ? 'out' : '');
       li.tabIndex = 0;
-      const th = el('span', 'th');
-      if (e.meta.hasBg) th.style.backgroundImage = 'url("' + M.bgSrc(e.md5) + '")';
+      const th = M.thumbBox('span', 'th', e.md5, e.meta.hasBg);
       const name = el('span', 'nm');
       name.append(el('b', null, e.meta.title), el('span', null, e.meta.version));
       const dans = el('span', 'ds');
@@ -319,7 +317,7 @@
       if (!(v >= 0.5 && v <= 2)) { from.value = key(rule.from); return; }
       rule.from = v; M.changed(); renderRate();
     });
-    const del = el('button', 'btn quiet', '삭제');
+    const del = el('button', 'btn quiet danger', '삭제');
     del.type = 'button';
     del.addEventListener('click', () => { rc().rules = rc().rules.filter(r => r !== rule); M.changed(); renderRate(); });
     head.append(from, el('span', null, '부터'), el('span', 'grow'), del);
@@ -330,7 +328,7 @@
       const first = rc().rates.find(r => r >= rule.from - 1e-9);
       const rate = first == null ? rule.from : first;
       window.Thumb.render(canvas.getContext('2d'), 320, 180, { bgMode: 'each', fx: rule.fx, layers: designFor(rate).layers },
-        Object.assign(entryLike(rate, 0), { bgAsset: rule.asset || undefined }));
+        Object.assign(entryLike(rate, 0), { bgAsset: rule.asset || undefined }), true);
     };
     const imgRow = el('div', 'row');
     const pick = el('button', 'btn', rule.asset ? '다른 이미지로' : '이미지 바꾸기');
@@ -402,6 +400,8 @@
     $('rcEx2').textContent = nameFor(sample, 'x');
     const th = $('rcThumb');
     th.style.backgroundImage = d.hasBg ? 'url("' + M.bgSrc(d.md5) + '")' : '';
+    th.classList.toggle('none', !d.hasBg);
+    th.textContent = d.hasBg ? '' : '썸네일 없음';
     $('rcTitle').textContent = d.title;
     $('rcArtist').textContent = d.artist;
     $('rcFacts').textContent = ['[' + d.version + ']', '제작자 ' + d.creator, M.fmtTime(d.lengthMs), M.bpmText(d, 1) + ' BPM', d.keys + 'K',
@@ -432,7 +432,7 @@
       else dans.append(el('span', 'dim', rating && rating.msd ? 'MSD ' + rating.msd.toFixed(1) : '계산할 수 없음'));
       const rule = ruleFor(rate);
       const thumb = !wantsImage(rate) ? '원래 그대로' : rule ? key(rule.from) + '부터의 규칙' + (c.dan ? ' + 심볼' : '') : '심볼 추가';
-      const del = el('button', 'btn quiet icon', '×');
+      const del = el('button', 'btn quiet icon danger', '');
       del.type = 'button'; del.title = '이 배속 빼기'; del.setAttribute('aria-label', key(rate) + '배속 빼기');
       del.addEventListener('click', () => { c.rates = c.rates.filter(r => r !== rate); M.changed(); renderRate(); });
       li.append(el('span', 'rt num', key(rate) + '×'), el('span', 'nm', nameFor(rate)), el('span', 'num', M.bpmText(d, rate)),

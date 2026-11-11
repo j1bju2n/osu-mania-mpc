@@ -1,0 +1,24 @@
+Osu!Mania MPC  by Tamania
+
+This program is put together from the following parts.
+
+Osu!Mania MPC itself
+  Written for Tamania. The program reads the osu! folder and never changes it, and sends nothing over the network.
+
+Mania Tracker  (https://github.com/aleju03/mania-hub, MIT License, Copyright (c) 2026 aleju03)
+  - dan-calc: the difficulty (MSD / dan) estimator, built unchanged into mmr-calc.exe inside the program.
+    The libraries it is built with are listed in "mmr-calc - third party licenses.txt".
+  - the dan symbol artwork. According to that project, the 6K symbols are traced from the dan course
+    backgrounds (Arkman, sunnyxxy) and the 7K ladder is the JinJin 7K courses: those marks belong to
+    their course authors.
+  The licence text is in "Mania Tracker (dan-calc, dan symbols) - MIT.txt".
+
+FFmpeg  (https://ffmpeg.org, GNU General Public License v3 or later)
+  ffmpeg.exe is shipped next to the program and run as a separate program. See "FFmpeg - GPL v3.txt".
+
+Python  (https://www.python.org, Python Software Foundation License)
+  The program is packaged with PyInstaller (https://pyinstaller.org, GPL with a bootloader exception),
+  which places the Python runtime inside Osu!Mania MPC.exe.
+
+The memory layout used to follow the map selected in osu! comes from the open-source tosu project
+(https://github.com/tosuapp/tosu).

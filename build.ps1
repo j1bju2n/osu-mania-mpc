@@ -5,6 +5,9 @@
 #                                the Companella install on this PC; about 100 MB, so it is not packed
 #                                inside the exe: that would unpack 100 MB on every start)
 #   output\README.txt            the user guide
+#   output\licenses\             notices for the parts that are not ours (FFmpeg, Mania Tracker, mmr-calc, Python)
+#   output\Osu!Mania MPC v<version>.zip
+#                                the four items above in one file: THE THING TO SHARE with other people
 #   output\packs\                where exported packs go by default (created by the program; kept by builds)
 # Usage:  powershell -ExecutionPolicy Bypass -File build.ps1
 $ErrorActionPreference = 'Stop'
@@ -55,7 +58,40 @@ if (-not (Test-Path $ffTarget)) {
 }
 Copy-Item (Join-Path $root 'docs\README.txt') (Join-Path $out 'README.txt') -Force
 
-foreach ($part in @('Osu!Mania MPC.exe', 'ffmpeg.exe', 'README.txt')) {
+# notices for what is bundled
+$lic = Join-Path $out 'licenses'
+New-Item -ItemType Directory -Force $lic | Out-Null
+Copy-Item (Join-Path $root 'src\mpc\web\dans\LICENSE.txt') (Join-Path $lic 'Mania Tracker (dan-calc, dan symbols) - MIT.txt') -Force
+Copy-Item (Join-Path $root 'src\mpc\bin\THIRD-PARTY-LICENSES.txt') (Join-Path $lic 'mmr-calc - third party licenses.txt') -Force
+Copy-Item (Join-Path $root 'docs\NOTICE.txt') (Join-Path $lic 'NOTICE.txt') -Force
+if (Test-Path $ffTarget) {
+    $ffInfo = @('ffmpeg.exe in this folder is FFmpeg, a separate program that Osu!Mania MPC runs to convert audio.',
+                'It is licensed under the GNU General Public License version 3 or later.',
+                'Source code: https://ffmpeg.org/download.html   This build: https://www.gyan.dev/ffmpeg/builds/', '')
+    $ffInfo += (& $ffTarget -hide_banner -version | Select-Object -First 3)
+    $ffInfo += ''
+    $ffInfo += (& $ffTarget -hide_banner -L)
+    [System.IO.File]::WriteAllLines((Join-Path $lic 'FFmpeg - GPL v3.txt'), [string[]]$ffInfo, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+# the one file to hand to other people
+$version = [regex]::Match((Get-Content (Join-Path $root 'src\mpc\__init__.py') -Raw), "__version__ = '([^']+)'").Groups[1].Value
+Get-ChildItem -LiteralPath $out -Filter 'Osu!Mania MPC v*.zip' | Remove-Item -Force
+$share = Join-Path ([System.IO.Path]::GetTempPath()) ('mpc-share-' + [guid]::NewGuid().ToString('N'))
+$inner = Join-Path $share 'Osu!Mania MPC'
+New-Item -ItemType Directory -Force $inner | Out-Null
+try {
+    foreach ($part in @('Osu!Mania MPC.exe', 'ffmpeg.exe', 'README.txt')) { Copy-Item -LiteralPath (Join-Path $out $part) $inner }
+    Copy-Item -LiteralPath $lic $inner -Recurse
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = Join-Path $out ("Osu!Mania MPC v$version.zip")
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($share, $zip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+}
+finally {
+    Remove-Item -LiteralPath $share -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+foreach ($part in @('Osu!Mania MPC.exe', 'ffmpeg.exe', 'README.txt', "Osu!Mania MPC v$version.zip")) {
     $target = Join-Path $out $part
     if (Test-Path -LiteralPath $target) { '{0,12:N0} bytes  {1}' -f (Get-Item -LiteralPath $target).Length, $part }
 }

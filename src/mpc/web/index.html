@@ -59,6 +59,7 @@
       <div class="banner">
         <img id="bannerImg" alt="">
         <div class="banner-shade"></div>
+        <span class="nothumb" id="bannerNone" hidden>썸네일 없음</span>
         <div class="banner-text">
           <h2 id="mTitle"></h2>
           <p id="mArtist"></p>
@@ -132,6 +133,8 @@
     <div class="pack-head">
       <h2>넣은 맵</h2>
       <span class="num dim" id="packSummary"></span>
+      <span class="grow"></span>
+      <button class="btn quiet danger" type="button" id="packClear" hidden>모두 빼기</button>
     </div>
     <div class="spread" id="spread" hidden>
       <div class="spread-head">
@@ -221,7 +224,7 @@
         <label class="slider"><span>색 세기</span><input type="range" data-fx="tint" min="0" max="100" step="1"><output class="num"></output></label>
         <div class="row">
           <button class="btn quiet" type="button" id="fxReset">효과 초기화</button>
-          <button class="btn quiet" type="button" id="fxOneClear" hidden>이 맵만의 효과 지우기</button>
+          <button class="btn quiet danger" type="button" id="fxOneClear" hidden>이 맵만의 효과 지우기</button>
         </div>
       </div>
     </details>
@@ -285,7 +288,11 @@
 <!-- ============================================================ 3. metadata -->
 <section class="view meta" id="view-meta" role="tabpanel" hidden>
   <div class="metacol">
-    <h2>맵팩 정보</h2>
+    <div class="headrow">
+      <h2>맵팩 정보</h2>
+      <span class="grow"></span>
+      <button class="btn quiet danger" type="button" id="metaClear">메타데이터 모두 지우기</button>
+    </div>
     <label class="field"><span>맵팩 이름 <em>Title</em></span><input type="text" id="pTitle" maxlength="80" autocomplete="off" spellcheck="false" placeholder="예: Epsilon Pack (Tech)"></label>
     <div class="two">
       <label class="field"><span>아티스트 <em>Artist</em></span><input type="text" id="pArtist" maxlength="80" autocomplete="off" spellcheck="false"></label>
@@ -383,7 +390,7 @@
         <input class="num" type="text" id="rcOne" inputmode="decimal" placeholder="1.37" aria-label="배속 하나" autocomplete="off">
         <button class="btn" type="button" id="rcAddOne">하나 추가</button>
         <div class="grow"></div>
-        <button class="btn quiet" type="button" id="rcClear">모두 지우기</button>
+        <button class="btn quiet danger" type="button" id="rcClear">모두 지우기</button>
       </div>
       <div class="rc-chart" id="rcChart"></div>
       <ol class="rc-list" id="rcList"></ol>
@@ -517,6 +524,18 @@
     </div>
     <div class="dlg-actions">
       <button class="btn" type="button" data-close>닫기</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="resumeDlg" aria-labelledby="resumeTitle">
+  <div class="dlg">
+    <h2 id="resumeTitle">이전에 작업하던 팩이 있습니다</h2>
+    <p class="lead" id="resumeLead"></p>
+    <p class="path" id="resumeFacts"></p>
+    <div class="dlg-actions">
+      <button class="btn danger" type="button" id="resumeNew">처음부터 새로 만들기</button>
+      <button class="btn primary" type="button" id="resumeGo">이어서 하기</button>
     </div>
   </div>
 </dialog>

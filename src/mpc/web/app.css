@@ -571,3 +571,29 @@ input.full { width: 100%; margin-top: 8px; }
 @media (max-width: 1280px) { .ratev { grid-template-columns: minmax(0, 1fr) 340px; } }
 .rc-rule input.short { width: 64px; text-align: center; }
 .rc-list .warn, .label .warn { vertical-align: middle; margin-left: 2px; }
+
+/* ---------- 0.3: anything that deletes looks the same everywhere: a bin, in red */
+:root { --trash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 1.5h4l.6 1.5H14v1.5H2V3h3.4L6 1.5zM3.2 5.5h9.6l-.7 9H3.9l-.7-9zm2.6 1.5.3 6h1.2l-.3-6H5.8zm3.4 0-.3 6h1.2l.3-6H9.2z'/%3E%3C/svg%3E"); }
+.btn.danger { color: #ff8a8f; border-color: rgba(255, 92, 98, .5); background: rgba(255, 92, 98, .09); }
+.btn.danger:hover { color: #ffc2c4; border-color: var(--bad); background: rgba(255, 92, 98, .24); }
+.btn.danger:active { background: rgba(255, 92, 98, .36); }
+.btn.quiet.danger { border-color: transparent; background: transparent; }
+.btn.quiet.danger:hover { border-color: rgba(255, 92, 98, .6); background: rgba(255, 92, 98, .18); }
+.btn.danger::before {
+  content: ""; display: inline-block; width: 13px; height: 13px; margin-right: 6px; vertical-align: -2px; background: currentColor;
+  -webkit-mask: var(--trash) center / contain no-repeat; mask: var(--trash) center / contain no-repeat;
+}
+.btn.icon.danger::before { margin-right: 0; vertical-align: 0; }
+.headrow { display: flex; align-items: center; gap: 10px; }
+.pack-head { align-items: center; }
+.pack-head .btn { height: 26px; padding: 0 8px; font-size: 12px; }
+
+/* a map that has no picture says so wherever its picture would be */
+.th.none, .pop-thumb.none, .rc-thumb.none {
+  display: grid; place-items: center; text-align: center; color: var(--ink-3); font-size: 10px; line-height: 1.2;
+  background: repeating-linear-gradient(135deg, #171717 0 8px, #1d1d1d 8px 16px); overflow: hidden;
+}
+.pop-thumb.none { color: #666666; font-size: 13px; background: repeating-linear-gradient(135deg, #d6d6d6 0 10px, #cdcdcd 10px 20px); }
+.rc-thumb.none { font-size: 14px; }
+.nothumb { position: absolute; left: 0; right: 0; top: 38%; text-align: center; color: var(--ink-3); font-size: 15px; pointer-events: none; }
+#resumeDlg .dlg-actions { justify-content: space-between; }

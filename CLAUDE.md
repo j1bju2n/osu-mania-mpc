@@ -33,6 +33,15 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
   - 레이트 체인저: 맵 하나를 n.x~n.x 배속으로, 배속별 예상 난이도 표시, 특정 배속부터 썸네일·효과 변경,
     난이도명 방식 선택(뒤에 `1.1` / `1.1x` / 직접 규칙 / 정배속 아닌 것은 배속만).
 
+- 0.3.0 (2026-11-12 오너 3차 요청, 레이트 체인저 동작 확인 후):
+  - 시작할 때 이전 작업이 있으면 "이어서 하기 / 처음부터 새로 만들기"를 묻는다 (`askResume`; Esc는 이어서 하기).
+    처음부터를 고르면 지우기 전에 `project.backup.json`으로 한 벌 남긴다. `#view=`로 바로 여는 경우는 묻지 않는다(개발용).
+  - 메타데이터 "모두 지우기", 넣은 맵 "모두 빼기". 확인 창을 거친다.
+  - **삭제·지우기 버튼은 모든 창에서 `.btn.danger`** (붉은색 + 휴지통 아이콘, CSS `::before` 마스크). 새로 만들 때도 이 클래스를 쓴다.
+    되돌리기·초기화(원래대로, 효과 초기화 등)는 삭제가 아니므로 붙이지 않았다.
+  - 썸네일이 없는 맵은 그림 자리에 "썸네일 없음" (`thumbBox`, 편집기 캔버스는 `render(..., preview=true)`. 내보내는 그림에는 넣지 않는다).
+  - **공유용**: `build.ps1`이 `output\Osu!Mania MPC v<버전>.zip`을 만든다 (exe + ffmpeg.exe + README + licenses). 오너는 이 zip만 보내면 된다.
+
 ## 구조
 - `src/mpc/` 본체, **표준 라이브러리만** 사용.
   - `osudb.py` osu!.db 파싱(mania만) + db에 없는 Songs 폴더는 직접 읽기. 읽기 전용.
@@ -47,7 +56,11 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
     `editor.js`(썸네일 렌더·편집기, `window.Thumb`), `parts.js`(팩 구성·레이트 체인저·선 그래프), `dans/`(단 심볼, MIT).
   - 레이트 체인저 내보내기는 `core.RateJob`(ExportJob 상속). 원본 맵 폴더에 쓸 때는 **기존 파일을 절대 덮어쓰지 않고**
     (이름이 겹치면 `_2`, 난이도명은 `(2)`), 실패·취소 시 자기가 만든 파일(`job.created`)만 지운다. 1.00배속은 원본 오디오를 그대로 가리킨다.
-  - `bin/mmr-calc.exe` `../maniatracker/calc/bin`에서 복사한 것. 계산기를 다시 빌드하면 여기도 다시 복사.
+  - `bin/mmr-calc.exe` MMR의 calc 크레이트(`../maniatracker/calc`)를 `tools/build_calc.ps1`로 빌드한 것 (0.3.0부터).
+    MMR의 `calc/bin` 것을 그대로 복사하면 **안 된다**: 그 빌드에는 `C:\Users\<계정>\.cargo\...` 경로가 119곳 박혀 있어
+    공유본에 Windows 계정 이름이 새어 나간다. `build_calc.ps1`은 `--remap-path-prefix`로 가린다 (소스·고정 커밋·플래그는 같음,
+    `tests/compare_calc.py`로 결과가 같은지 확인). 공유 전 점검: `python tools/scan_private.py src/mpc/bin/mmr-calc.exe`.
+    Python 쪽은 PyInstaller가 경로를 지워 주므로 문제없다(확인함).
 - 썸네일은 브라우저 canvas에서 그린다(`Thumb.render`). 미리보기·필름스트립·내보내기가 같은 함수를 쓴다.
   내보낼 때 화면이 맵마다 그려서 `/api/export/image`로 올리고, 그다음 서버가 오디오와 .osu를 만든다.
 - `build.ps1` → PyInstaller onefile `output/Map Pack Create.exe`(약 12MB) + `output/ffmpeg.exe`(Companella 것 복사, 105MB,
@@ -91,7 +104,8 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
   그 폴더에 `live.txt`가 있으면 가짜 osu! 신호로 쓴다 (md5 / `none` / `off`를 적는다).
   Browser 창이 가려져 캡처가 안 될 때: `python tools/shot.py <pick|pack|thumb|meta|rate> <out.png>` (헤드리스 Edge, `#view=`로 그 파트를 연다).
   개발 서버에서 레이트 체인저를 시험할 때는 반드시 "packs 폴더에 따로 만들기"로 (원본 폴더 = 실제 osu! Songs).
-- 빌드: `powershell -ExecutionPolicy Bypass -File build.ps1`
+- 빌드: `powershell -ExecutionPolicy Bypass -File build.ps1` (exe + licenses + 공유용 zip)
+- 공유본 점검: `python tests/check_share.py` (zip을 다른 곳에 풀어 새 사용자처럼 실행. 프로그램이 켜져 있으면 거부한다)
 - exe 점검(창 없이): `MPC_NO_WINDOW=1 MPC_PORT=... MPC_TOKEN=... MPC_DATA_DIR=... MPC_PACKS_DIR=...`로 실행 후 API 호출.
 
 ## 아직 안 한 것 / 가정

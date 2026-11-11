@@ -40,10 +40,13 @@
     toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
   }
 
-  function confirmBox(text) {
+  /* opts.danger: the answer deletes something; opts.yes: the label of the confirming button. */
+  function confirmBox(text, opts) {
     return new Promise(resolve => {
-      const dlg = $('confirmDlg');
+      const dlg = $('confirmDlg'), yes = $('confirmYes');
       $('confirmText').textContent = text;
+      yes.textContent = (opts && opts.yes) || '확인';
+      yes.className = 'btn ' + (opts && opts.danger ? 'danger' : 'primary');
       const done = v => { dlg.close(); $('confirmYes').onclick = $('confirmNo').onclick = null; resolve(v); };
       $('confirmYes').onclick = () => done(true);
       $('confirmNo').onclick = () => done(false);
@@ -116,9 +119,24 @@
     return p;
   }
 
+  /* A place for a map's picture; says so when the map has none. */
+  function thumbBox(tag, cls, md5, hasBg) {
+    const th = el(tag, cls);
+    if (hasBg) th.style.backgroundImage = 'url("' + bgSrc(md5) + '")';
+    else { th.classList.add('none'); th.textContent = '썸네일 없음'; }
+    return th;
+  }
+
+  /* Whether there is anything in the project worth asking about on the next start. */
+  function hasWork(p) {
+    return !!(p && (p.entries.length || p.pack.title.trim() || p.pack.tags.trim() || p.pack.source.trim()
+      || p.thumb.layers.length || (p.rc && p.rc.rates.length)));
+  }
+
   let saveTimer = 0;
   function changed() {
     clearTimeout(saveTimer);
+    S.project.savedAt = Date.now();
     saveTimer = setTimeout(async () => {
       try {
         await api('/api/project', S.project);
@@ -126,6 +144,42 @@
         setTimeout(() => { $('saved').textContent = ''; }, 1600);
       } catch (e) { $('saved').textContent = '저장하지 못했습니다'; }
     }, 700);
+  }
+
+  /* Throw the current project away (a copy stays on disk as project.backup.json) and start empty. */
+  async function startOver() {
+    try { await api('/api/project/backup', {}); } catch (e) { /* nothing saved yet */ }
+    S.project = newProject();
+    S.cur = null; $('map').hidden = true; $('stageEmpty').hidden = false; stopAudio();
+    Thumb.reset();
+    renderEntries(); show('pick'); changed();
+  }
+
+  /* On start: carry on with the pack that was being made, or begin a new one. */
+  function askResume() {
+    const p = S.project;
+    if (!hasWork(p)) return Promise.resolve();
+    return new Promise(resolve => {
+      const dlg = $('resumeDlg'), name = p.pack.title.trim();
+      $('resumeLead').textContent = name ? '"' + name + '" 팩에서 이어서 할까요?' : '이름을 아직 정하지 않은 팩에서 이어서 할까요?';
+      const facts = ['넣은 맵 ' + p.entries.length + '개'];
+      if (p.thumb.layers.length) facts.push('썸네일 레이어 ' + p.thumb.layers.length + '개');
+      if (p.rc && p.rc.rates.length) facts.push('레이트 체인저 배속 ' + p.rc.rates.length + '개');
+      if (p.savedAt) facts.push('마지막 작업 ' + new Date(p.savedAt).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' }));
+      $('resumeFacts').textContent = facts.join('     ');
+      $('resumeFacts').style.whiteSpace = 'pre-wrap';
+      const done = async fresh => {
+        $('resumeGo').onclick = $('resumeNew').onclick = null;
+        dlg.close();
+        if (fresh) await startOver();
+        resolve();
+      };
+      $('resumeGo').onclick = () => done(false);
+      $('resumeNew').onclick = () => done(true);
+      dlg.oncancel = ev => { ev.preventDefault(); done(false); };      // Esc keeps the work
+      dlg.showModal();
+      $('resumeGo').focus();
+    });
   }
 
   // ------------------------------------------------------------ formatting
@@ -331,6 +385,7 @@
     $('stageEmpty').hidden = true; $('map').hidden = false;
     const img = $('bannerImg');
     img.hidden = !detail.hasBg;
+    $('bannerNone').hidden = detail.hasBg;
     if (detail.hasBg) img.src = bgSrc(md5);
     $('mTitle').textContent = detail.title;
     $('mArtist').textContent = detail.artist;
@@ -569,6 +624,7 @@
     const p = S.project, list = $('entries');
     list.textContent = '';
     $('packEmpty').hidden = p.entries.length > 0;
+    $('packClear').hidden = !p.entries.length;
     const info = outliers();
     const total = p.entries.reduce((s, e) => s + (e.meta.lengthMs || 0) / e.rate, 0);
     $('packSummary').textContent = p.entries.length ? p.entries.length + '개  ' + fmtTime(total) : '';
@@ -576,8 +632,7 @@
       const li = el('li', (S.cur && S.cur.editUid === e.uid ? 'on ' : '') + (info.out.has(e.uid) ? 'out' : ''));
       li.draggable = true;
       li.tabIndex = 0;
-      const th = el('span', 'th');
-      if (e.meta.hasBg) th.style.backgroundImage = 'url("' + bgSrc(e.md5) + '")';
+      const th = thumbBox('span', 'th', e.md5, e.meta.hasBg);
       const text = el('span');
       const sub = el('span', 's');
       sub.append(el('span', 'rate', fmtRate(e.rate) + '×'), el('span', null, e.followPitch && e.rate !== 1 ? '피치 변경' : e.rate !== 1 ? '피치 유지' : ''), el('span', null, fmtTime(e.meta.lengthMs / e.rate)));
@@ -595,15 +650,15 @@
       }
       if (!d.childNodes.length && e.rating && e.rating.msd) d.append(el('span', null, 'MSD ' + e.rating.msd.toFixed(1)));
       const acts = el('span', 'acts');
-      const mk = (label, title, fn) => {
-        const b = el('button', 'btn quiet icon', label);
+      const mk = (label, title, fn, danger) => {
+        const b = el('button', 'btn quiet icon' + (danger ? ' danger' : ''), label);
         b.type = 'button'; b.title = title; b.setAttribute('aria-label', title);
         b.addEventListener('click', ev => { ev.stopPropagation(); fn(); });
         acts.append(b);
       };
       mk('↑', '위로', () => moveEntry(i, i - 1));
       mk('↓', '아래로', () => moveEntry(i, i + 1));
-      mk('×', '팩에서 빼기', () => removeEntry(e.uid));
+      mk('', '팩에서 빼기', () => removeEntry(e.uid), true);
       li.append(el('span', 'idx', String(i + 1)), th, text, d, acts);
       li.addEventListener('click', () => selectMap(e.md5, e));
       li.addEventListener('keydown', ev => { if (ev.key === 'Enter') selectMap(e.md5, e); if (ev.key === 'Delete') removeEntry(e.uid); });
@@ -678,8 +733,7 @@
     p.entries.forEach(e => { const k = (e.version || '').toLowerCase(); seen[k] = (seen[k] || 0) + 1; });
     p.entries.forEach((e, i) => {
       const li = el('li', seen[(e.version || '').toLowerCase()] > 1 ? 'dup' : '');
-      const th = el('span', 'th');
-      if (e.meta.hasBg) th.style.backgroundImage = 'url("' + bgSrc(e.md5) + '")';
+      const th = thumbBox('span', 'th', e.md5, e.meta.hasBg);
       const body = el('div');
       body.style.minWidth = '0';
       const src = el('div', 'src');
@@ -975,11 +1029,26 @@
     $('exportDlg').addEventListener('cancel', ev => { if (!$('exRun').hidden) ev.preventDefault(); });
     document.querySelectorAll('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
     $('newBtn').addEventListener('click', async () => {
-      if (S.project.entries.length && !(await confirmBox('지금 만들던 팩 구성을 모두 비우고 새로 시작할까요? 내보낸 파일은 그대로 남습니다.'))) return;
-      S.project = newProject();
-      S.cur = null; $('map').hidden = true; $('stageEmpty').hidden = false; stopAudio();
-      Thumb.reset();
-      renderEntries(); show('pick'); changed();
+      if (hasWork(S.project) && !(await confirmBox('지금 만들던 팩 구성(넣은 맵, 썸네일 디자인, 메타데이터)을 모두 비우고 새로 시작할까요? 내보낸 파일은 그대로 남습니다.',
+        { danger: true, yes: '모두 비우고 새로 시작' }))) return;
+      startOver();
+    });
+    $('packClear').addEventListener('click', async () => {
+      if (!(await confirmBox('넣은 맵 ' + S.project.entries.length + '개를 모두 뺄까요? 썸네일 디자인과 메타데이터는 그대로 둡니다.',
+        { danger: true, yes: '모두 빼기' }))) return;
+      S.project.entries = [];
+      if (S.cur) { S.cur.editUid = null; $('addBtn').textContent = '팩에 넣기'; $('cancelEdit').hidden = true; }
+      renderEntries(); changed();
+    });
+    $('metaClear').addEventListener('click', async () => {
+      if (!(await confirmBox('맵팩 이름, 출처, 태그, OD/HP, 난이도명 규칙, delete 난이도 설정을 모두 지우고 처음 상태로 되돌릴까요? 넣은 맵과 썸네일 디자인은 그대로 둡니다.',
+        { danger: true, yes: '메타데이터 모두 지우기' }))) return;
+      const fresh = newProject();
+      S.project.pack = fresh.pack;
+      S.project.delete = fresh.delete;
+      applyTemplate(true);
+      renderMeta(); renderEntries(); changed();
+      toast('메타데이터를 모두 지웠습니다.');
     });
     bindMeta();
     window.addEventListener('pagehide', () => navigator.sendBeacon('/api/bye?t=' + q(TOKEN), '{}'));
@@ -1003,9 +1072,10 @@
     $('follow').checked = S.follow;
     bind();
     renderEntries();
+    const wanted = new URLSearchParams(location.hash.slice(1)).get('view');      // #view=pack opens that part
+    if (!wanted) await askResume();                  // a link straight to a part carries on without asking
     watchLibrary();
     if (MPC.rate) MPC.rate.init();
-    const wanted = new URLSearchParams(location.hash.slice(1)).get('view');      // #view=pack opens that part
     if (VIEWS.includes(wanted) && wanted !== 'pick') show(wanted);
     hold();
     pollLive();
@@ -1014,7 +1084,7 @@
 
   /* Shared with parts.js (pack overview, rate changer). */
   window.MPC = { S, $, el, api, q, TOKEN, toast, confirmBox, pickFile, upload, changed, fmtRate, fmtTime, fmtBpm, bpmText,
-    bgSrc, dansOf, packInfo, danChip, show, selectMap, runExport, renderEntries, applyTemplate, SKILL_KO,
+    bgSrc, thumbBox, dansOf, packInfo, danChip, show, selectMap, runExport, renderEntries, applyTemplate, SKILL_KO,
     exportTitle: text => { $('exportTitle').textContent = text; } };
 
   boot();

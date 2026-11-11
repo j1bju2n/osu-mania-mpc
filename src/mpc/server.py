@@ -251,6 +251,8 @@ class Handler(BaseHTTPRequestHandler):
             self.app.window_closed()
         elif path == '/api/project':
             result['ok'] = core.save_project(body)
+        elif path == '/api/project/backup':
+            result['ok'] = core.backup_project()
         elif path == '/api/settings':
             core.save_settings(body)
         elif path == '/api/library/reload':

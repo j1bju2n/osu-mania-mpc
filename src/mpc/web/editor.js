@@ -118,7 +118,8 @@
   }
 
   // ------------------------------------------------------------ render
-  async function render(ctx, W, H, thumb, entry) {
+  /* preview: drawn for the screen, where a map without a picture says so. Exports never carry that text. */
+  async function render(ctx, W, H, thumb, entry, preview) {
     const s = W / BASE_W, fx = Object.assign({}, FX_DEFAULT, entry.fx || thumb.fx);   // a map may carry its own
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -151,6 +152,12 @@
       g.addColorStop(0, '#242424'); g.addColorStop(1, '#141414');
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H);
+      if (preview) {
+        ctx.fillStyle = '#8a8a8a';
+        ctx.font = '500 ' + Math.max(11, Math.round(H * 0.06)) + 'px "Segoe UI", "Malgun Gothic", sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('썸네일 없음', W / 2, H / 2);
+      }
     }
     if (fx.tint > 0) {
       ctx.globalCompositeOperation = fx.tintMode || 'source-over';
@@ -386,7 +393,7 @@
         const canvas = $('canvas');
         $('thumbEmpty').hidden = !!entry;
         $('canvasBox').hidden = !entry;
-        if (entry) await render(canvas.getContext('2d'), canvas.width, canvas.height, designFor(entry), entry);
+        if (entry) await render(canvas.getContext('2d'), canvas.width, canvas.height, designFor(entry), entry, true);
         placeSelection();
       } while (ed.again);
     } finally { ed.drawing = false; }
@@ -453,7 +460,7 @@
       b.classList.toggle('own', !!own);
       b.lastChild.textContent = b.dataset.uid === 'delete' ? '[' + ((p.delete && p.delete.name) || 'delete') + '] 확인 필요'
         : (entry.index + 1) + '. ' + (own ? '(개별) ' : '') + (entry.meta ? entry.meta.title : '');
-      await render(b.querySelector('canvas').getContext('2d'), 248, 140, designFor(entry), entry);
+      await render(b.querySelector('canvas').getContext('2d'), 248, 140, designFor(entry), entry, true);
     }
   }
 
@@ -514,8 +521,8 @@
       const li = el('li', (layer.id === ed.sel ? 'on ' : '') + (layer.visible === false ? 'off' : ''));
       li.append(el('span', 'ic', ICON[layer.type]), el('span', 'nm', layerName(layer)));
       const acts = el('span', 'acts');
-      const mk = (label, title, fn) => {
-        const b = el('button', 'btn quiet icon', label);
+      const mk = (label, title, fn, danger) => {
+        const b = el('button', 'btn quiet icon' + (danger ? ' danger' : ''), label);
         b.type = 'button'; b.title = title; b.setAttribute('aria-label', title);
         b.addEventListener('click', ev => { ev.stopPropagation(); snapshot(); fn(); changed(); });
         acts.append(b);
@@ -523,7 +530,7 @@
       mk('↑', '앞으로', () => moveLayer(layer.id, 1));
       mk('↓', '뒤로', () => moveLayer(layer.id, -1));
       mk(layer.visible === false ? '○' : '●', layer.visible === false ? '보이기' : '숨기기', () => { layer.visible = layer.visible === false; });
-      mk('×', '삭제', () => removeLayer(layer.id));
+      mk('', '레이어 삭제', () => removeLayer(layer.id), true);
       li.append(acts);
       li.addEventListener('click', () => { ed.sel = layer.id; renderLayerList(); renderProps(); placeSelection(); });
       list.append(li);
@@ -843,7 +850,7 @@
         app.saveSymbols(list);
         renderSymbols();
       });
-      const del = el('button', 'btn quiet', '삭제');
+      const del = el('button', 'btn quiet danger', '삭제');
       del.type = 'button';
       del.addEventListener('click', () => { app.saveSymbols(list.filter(x => x !== c)); renderSymbols(); });
       li.append(img, input, tier, del);

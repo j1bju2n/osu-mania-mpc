@@ -1,10 +1,19 @@
 Osu!Mania MPC  by Tamania
 osu!mania 맵팩 제작 도구 (Map Pack Create) + 레이트 체인저
 
+■ 처음 받으신 분께
+  필요한 것: Windows 10 또는 11, osu!(stable), Microsoft Edge 또는 Chrome (Windows에 기본으로 들어 있습니다).
+  설치는 없습니다. 압축을 푼 폴더를 원하는 곳에 두고 "Osu!Mania MPC.exe"를 실행하면 됩니다.
+  "Osu!Mania MPC.exe"와 "ffmpeg.exe"는 반드시 같은 폴더에 두세요. ffmpeg.exe가 없으면 내보내기가 되지 않습니다.
+  처음 실행할 때 Windows가 "PC를 보호했습니다"라는 창을 띄우면 "추가 정보"를 누른 뒤 "실행"을 누르세요
+  (개인이 만든 프로그램이라 서명이 없어서 나오는 안내입니다). 백신이 막으면 이 폴더를 예외로 등록해 주세요.
+  osu! 폴더는 읽기만 합니다. 인터넷으로 아무것도 보내지 않습니다.
+
 ■ 실행
   "Osu!Mania MPC.exe"를 실행합니다. 같은 폴더에 ffmpeg.exe가 있어야 내보내기가 됩니다.
   화면은 Microsoft Edge(없으면 Chrome)의 앱 창으로 열립니다. 창을 닫으면 프로그램도 끝납니다.
-  만들던 팩 구성은 자동으로 저장되어 다음에 켜면 그대로 이어집니다.
+  만들던 팩 구성은 자동으로 저장됩니다. 다음에 켜면 "이어서 하기 / 처음부터 새로 만들기"를 묻습니다.
+  빨간 휴지통이 붙은 버튼은 누르면 바로 지우거나 비우는 버튼입니다.
 
 ■ 순서
   1. 맵 고르기
@@ -40,6 +49,7 @@ osu!mania 맵팩 제작 도구 (Map Pack Create) + 레이트 체인저
 
   4. 메타데이터
      맵팩 이름, 아티스트, 제작자, 태그를 적으면 모든 난이도에 똑같이 들어갑니다.
+     "메타데이터 모두 지우기"로 적어 둔 이름, 태그 등을 한 번에 비울 수 있습니다 (넣은 맵은 그대로).
      "모든 난이도를 미업로드 상태로 바꾸기"는 BeatmapID 0, BeatmapSetID -1로 바꿉니다.
      난이도명은 이름 규칙으로 자동으로 채워지고 맵마다 직접 고쳐 쓸 수 있습니다.
      delete 난이도: 빈 오디오(기본 10분)를 넣은 난이도를 자동으로 추가해 맵셋을 마라톤으로 인식시킵니다.
@@ -84,3 +94,4 @@ osu!mania 맵팩 제작 도구 (Map Pack Create) + 레이트 체인저
   예상 난이도와 단 심볼: Mania Tracker (github.com/aleju03/mania-hub, MIT)의 dan-calc와 심볼.
     6K 심볼은 단 코스 배경(Arkman, sunnyxxy), 7K는 JinJin 7K 코스의 것으로, 각 코스 제작자의 것입니다.
   오디오 변환: FFmpeg (ffmpeg.org, GPL 빌드 gyan.dev). ffmpeg.exe는 별도 프로그램으로 함께 들어 있습니다.
+  자세한 라이선스 문서는 licenses 폴더에 있습니다.
