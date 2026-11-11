@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Osu!Mania MPC by Tamania</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>Osu!Mania MPC</h1>
+    <span class="by">by Tamania</span>
+  </div>
+  <nav class="steps" role="tablist" aria-label="작업 단계">
+    <button role="tab" data-view="pick" aria-selected="true"><b>1</b>맵 고르기</button>
+    <button role="tab" data-view="pack" aria-selected="false"><b>2</b>팩 구성</button>
+    <button role="tab" data-view="thumb" aria-selected="false"><b>3</b>썸네일</button>
+    <button role="tab" data-view="meta" aria-selected="false"><b>4</b>메타데이터</button>
+    <span class="steps-sep" aria-hidden="true"></span>
+    <button role="tab" data-view="rate" aria-selected="false">레이트 체인저</button>
+  </nav>
+  <div class="grow"></div>
+  <span class="saved" id="saved" aria-live="polite"></span>
+  <button class="btn quiet" id="newBtn" type="button">새 팩</button>
+  <button class="btn primary" id="exportBtn" type="button">내보내기</button>
+</header>
+
+<main id="main" class="libclosed">
+<aside class="lib" id="lib" aria-label="맵 목록">
+  <button class="libtoggle" id="libToggle" type="button" aria-expanded="false" aria-controls="libBody">
+    <span class="chev" aria-hidden="true"></span><span class="libtoggle-text">맵 목록</span>
+  </button>
+  <div class="libbody" id="libBody">
+    <div class="lib-head">
+      <input type="search" id="q" placeholder="곡명, 아티스트, 제작자, 난이도명" aria-label="맵 검색" autocomplete="off" spellcheck="false">
+      <select id="keys" aria-label="키 수"><option value="0">모든 키</option></select>
+    </div>
+    <div class="lib-status" id="libStatus" aria-live="polite"></div>
+    <ol class="rows" id="rows"></ol>
+  </div>
+</aside>
+
+<div class="views">
+<div class="followbar" id="followBar">
+  <label class="check"><input type="checkbox" id="follow" checked><span class="box"></span>osu!에서 고른 맵 따라가기</label>
+  <span class="livestate" id="liveState" aria-live="polite"></span>
+</div>
+
+<!-- ============================================================ 1. pick -->
+<section class="view pick" id="view-pick" role="tabpanel">
+  <section class="stage" aria-label="선택한 맵">
+    <div class="blank" id="stageEmpty">
+      <p class="blank-title">osu!에서 맵을 고르면 여기에 뜹니다</p>
+      <p>osu!를 켜고 곡 선택 화면에서 맵을 고르세요. 직접 찾으려면 왼쪽 끝의 "맵 목록"을 펼치면 됩니다. 고른 맵의 배속을 정한 뒤 팩에 하나씩 넣습니다.</p>
+    </div>
+    <div class="map" id="map" hidden>
+      <div class="banner">
+        <img id="bannerImg" alt="">
+        <div class="banner-shade"></div>
+        <div class="banner-text">
+          <h2 id="mTitle"></h2>
+          <p id="mArtist"></p>
+        </div>
+        <button class="btn ghost play" id="playBtn" type="button">미리듣기</button>
+      </div>
+
+      <dl class="facts">
+        <div class="wide"><dt>난이도명</dt><dd id="mVersion"></dd></div>
+        <div><dt>제작자</dt><dd id="mCreator"></dd></div>
+        <div><dt>길이</dt><dd class="num" id="mLength"></dd></div>
+        <div><dt>BPM</dt><dd class="num" id="mBpm"></dd></div>
+        <div><dt>키</dt><dd class="num" id="mKeys"></dd></div>
+        <div><dt>노트</dt><dd class="num" id="mNotes"></dd></div>
+      </dl>
+
+      <div class="ratebox">
+        <div class="ratehead">
+          <span class="label">배속</span>
+          <div class="ratevalue">
+            <input class="num" id="rateNum" type="text" inputmode="decimal" value="1.00" aria-label="배속 값" autocomplete="off">
+            <span class="times">×</span>
+          </div>
+          <div class="stepper" role="group" aria-label="배속 미세 조절">
+            <button class="btn" type="button" data-step="-0.05">−0.05</button>
+            <button class="btn" type="button" data-step="-0.01">−0.01</button>
+            <button class="btn" type="button" data-step="0.01">+0.01</button>
+            <button class="btn" type="button" data-step="0.05">+0.05</button>
+            <button class="btn quiet" type="button" id="rateReset">1.00으로</button>
+          </div>
+        </div>
+        <div class="ruler">
+          <input id="rate" type="range" min="0.5" max="2" step="0.01" value="1" aria-label="배속">
+          <div class="ticks" id="ticks" aria-hidden="true"></div>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="followPitch"><span class="box"></span>
+          배속에 따라 피치도 함께 올리거나 내리기
+        </label>
+        <p class="hint" id="pitchHint"></p>
+      </div>
+
+      <div class="estimate" id="estimate">
+        <div class="est-head">
+          <span class="label">예상 난이도</span>
+          <button class="warn" type="button" aria-label="예상 난이도 안내" data-tip="이 난이도는 계산기가 추정한 값입니다. 100% 신뢰하지 말고 참고용으로만 사용해 주세요. 팩 안의 맵들이 서로 난이도가 크게 튀지 않는지 살펴보는 용도이며, 실제 체감은 직접 쳐 보고 판단하는 것이 가장 정확합니다.">!</button>
+          <span class="est-rate num" id="estRate"></span>
+        </div>
+        <div class="est-body">
+          <div class="dan">
+            <img id="danImg" alt="" hidden>
+            <div>
+              <strong id="danText">계산 중</strong>
+              <span class="num" id="msdText"></span>
+              <span class="dim" id="danOther"></span>
+            </div>
+          </div>
+          <ol class="skills" id="skills"></ol>
+        </div>
+      </div>
+
+      <div class="stage-actions">
+        <button class="btn primary big" id="addBtn" type="button">팩에 넣기</button>
+        <button class="btn big" id="cancelEdit" type="button" hidden>편집 취소</button>
+        <span class="dim" id="addNote"></span>
+      </div>
+    </div>
+  </section>
+
+  <aside class="pack" aria-label="넣은 맵">
+    <div class="pack-head">
+      <h2>넣은 맵</h2>
+      <span class="num dim" id="packSummary"></span>
+    </div>
+    <div class="spread" id="spread" hidden>
+      <div class="spread-head">
+        <span class="label">난이도 분포</span>
+        <span class="dim" id="spreadNote"></span>
+      </div>
+      <div id="spreadRows"></div>
+    </div>
+    <ol class="entries" id="entries"></ol>
+    <p class="blank small" id="packEmpty">아직 넣은 맵이 없습니다. 맵을 고르고 배속을 정한 뒤 "팩에 넣기"를 누르세요.</p>
+  </aside>
+</section>
+
+<!-- ============================================================ 2. pack overview -->
+<section class="view packview" id="view-pack" role="tabpanel" hidden>
+  <div class="pv">
+    <div class="pv-head">
+      <div>
+        <p class="label">맵팩</p>
+        <h2 id="pvTitle"></h2>
+        <p class="pv-sub num" id="pvSub"></p>
+      </div>
+      <div class="grow"></div>
+      <button class="btn" type="button" id="pvSort">쉬운 순서로 정렬</button>
+    </div>
+    <ul class="problems" id="pvWarn"></ul>
+    <div class="pv-charts" id="pvCharts"></div>
+    <p class="hint" id="pvHint">점을 누르면 그 맵의 썸네일과 이름이 나옵니다. 세로축은 예상 단위인정, 가로축은 팩 안의 순서입니다. 옅은 띠는 중앙값에서 위아래 1단 범위이고, 띠를 벗어난 맵은 노랗게 표시됩니다.</p>
+    <ol class="pv-list" id="pvList"></ol>
+    <p class="blank small" id="pvEmpty">아직 넣은 맵이 없습니다. "맵 고르기"에서 맵을 넣으면 여기에 팩의 난이도 구성이 그려집니다.</p>
+  </div>
+  <div class="pop" id="pvPop" hidden></div>
+</section>
+
+<!-- ============================================================ 3. thumbnail -->
+<section class="view thumb" id="view-thumb" role="tabpanel" hidden>
+  <aside class="tools" aria-label="썸네일 설정">
+    <details open>
+      <summary>배경</summary>
+      <div class="group">
+        <div class="seg" role="radiogroup" aria-label="배경 종류">
+          <label><input type="radio" name="bgMode" value="each" checked><span>각 맵의 배경</span></label>
+          <label><input type="radio" name="bgMode" value="common"><span>공통 이미지 하나</span></label>
+        </div>
+        <div class="row" id="commonRow" hidden>
+          <button class="btn" type="button" id="commonPick">공통 이미지 고르기</button>
+          <span class="dim clip" id="commonName"></span>
+        </div>
+        <p class="hint">모든 썸네일은 16:9로 맞춰 잘립니다. 아래 값으로 지금 보고 있는 맵의 잘리는 위치를 조절합니다.</p>
+        <label class="slider"><span>확대</span><input type="range" id="bgZoom" min="1" max="3" step="0.01" value="1"><output class="num"></output></label>
+        <label class="slider"><span>가로 위치</span><input type="range" id="bgX" min="0" max="100" step="1" value="50"><output class="num"></output></label>
+        <label class="slider"><span>세로 위치</span><input type="range" id="bgY" min="0" max="100" step="1" value="50"><output class="num"></output></label>
+        <div class="row">
+          <button class="btn" type="button" id="bgReplace">이 맵만 다른 이미지</button>
+          <button class="btn quiet" type="button" id="bgRestore" hidden>원래대로</button>
+        </div>
+      </div>
+    </details>
+    <details open>
+      <summary>효과</summary>
+      <div class="group" id="fx">
+        <div class="seg full" role="radiogroup" aria-label="효과를 적용할 범위">
+          <label><input type="radio" name="fxScope" value="all" checked><span>모든 맵</span></label>
+          <label><input type="radio" name="fxScope" value="one"><span>이 맵만 다르게</span></label>
+        </div>
+        <p class="hint" id="fxScopeNote"></p>
+        <label class="slider"><span>어둡게</span><input type="range" data-fx="dim" min="0" max="90" step="1"><output class="num"></output></label>
+        <label class="slider"><span>흐림</span><input type="range" data-fx="blur" min="0" max="40" step="1"><output class="num"></output></label>
+        <label class="slider"><span>대비</span><input type="range" data-fx="contrast" min="50" max="160" step="1"><output class="num"></output></label>
+        <label class="slider"><span>채도</span><input type="range" data-fx="saturate" min="0" max="200" step="1"><output class="num"></output></label>
+        <label class="slider"><span>노이즈</span><input type="range" data-fx="noise" min="0" max="100" step="1"><output class="num"></output></label>
+        <label class="slider"><span>입자 크기</span><input type="range" data-fx="grain" min="1" max="6" step="0.5"><output class="num"></output></label>
+        <label class="check"><input type="checkbox" data-fx="noiseColor"><span class="box"></span>컬러 노이즈</label>
+        <label class="slider"><span>비네트</span><input type="range" data-fx="vignette" min="0" max="100" step="1"><output class="num"></output></label>
+        <label class="slider"><span>주사선</span><input type="range" data-fx="scan" min="0" max="100" step="1"><output class="num"></output></label>
+        <div class="row tintrow">
+          <span>색 입히기</span>
+          <input type="color" data-fx="tintColor" aria-label="입힐 색">
+          <select data-fx="tintMode" aria-label="색 섞는 방식">
+            <option value="source-over">덮기</option>
+            <option value="multiply">곱하기</option>
+            <option value="screen">스크린</option>
+            <option value="overlay">오버레이</option>
+            <option value="color">색조만</option>
+          </select>
+        </div>
+        <label class="slider"><span>색 세기</span><input type="range" data-fx="tint" min="0" max="100" step="1"><output class="num"></output></label>
+        <div class="row">
+          <button class="btn quiet" type="button" id="fxReset">효과 초기화</button>
+          <button class="btn quiet" type="button" id="fxOneClear" hidden>이 맵만의 효과 지우기</button>
+        </div>
+      </div>
+    </details>
+    <details open>
+      <summary>출력 형식</summary>
+      <div class="group">
+        <label class="check"><input type="radio" name="imgFormat" value="jpg" checked><span class="box round"></span>모든 썸네일을 .jpg로 통일</label>
+        <label class="check"><input type="radio" name="imgFormat" value="png"><span class="box round"></span>모든 썸네일을 .png로 통일</label>
+        <p class="hint notice" id="pngNote" hidden>png는 화질이 좋지만 맵팩 용량이 커져 업로드가 힘들 수 있습니다.</p>
+        <label class="slider" id="qualityRow"><span>jpg 품질</span><input type="range" id="imgQuality" min="60" max="100" step="1" value="100"><output class="num"></output></label>
+        <label class="field inline"><span>크기</span>
+          <select id="imgSize">
+            <option value="1280x720">1280 × 720</option>
+            <option value="1920x1080" selected>1920 × 1080</option>
+            <option value="2560x1440">2560 × 1440</option>
+          </select>
+        </label>
+      </div>
+    </details>
+  </aside>
+
+  <section class="canvaswrap" aria-label="썸네일 미리보기">
+    <div class="addbar">
+      <span class="label">넣기</span>
+      <button class="btn" type="button" data-add="autodan" title="맵마다 그 맵의 예상 난이도 심볼이 들어갑니다">맵별 예상 난이도 심볼</button>
+      <button class="btn" type="button" data-add="symbol">단 심볼</button>
+      <button class="btn" type="button" data-add="text">글자</button>
+      <button class="btn" type="button" data-add="image">이미지</button>
+      <button class="btn" type="button" data-add="rect">도형</button>
+      <div class="grow"></div>
+      <button class="btn quiet" type="button" id="undoBtn" title="Ctrl+Z">되돌리기</button>
+    </div>
+    <div class="canvasstage" id="canvasStage">
+      <div class="canvasbox" id="canvasBox">
+        <canvas id="canvas" width="1920" height="1080"></canvas>
+        <div class="overlay" id="overlay">
+          <div class="guide v" id="guideV" hidden></div>
+          <div class="guide h" id="guideH" hidden></div>
+          <div class="selbox" id="selBox" hidden>
+            <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i>
+            <i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
+            <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i>
+            <i class="h n" data-h="n"></i><i class="h s" data-h="s"></i>
+            <i class="h rot" data-h="rot"></i>
+          </div>
+        </div>
+      </div>
+      <p class="blank small" id="thumbEmpty" hidden>팩에 맵을 넣으면 여기서 썸네일을 꾸밀 수 있습니다.</p>
+    </div>
+    <div class="film" id="film" aria-label="맵 썸네일 목록"></div>
+  </section>
+
+  <aside class="layers" aria-label="레이어">
+    <div class="pack-head"><h2>레이어</h2><span class="dim">위에 있을수록 앞</span></div>
+    <ol class="layerlist" id="layerList"></ol>
+    <p class="blank small" id="layerEmpty">위의 "넣기"에서 심볼, 글자, 이미지, 도형을 올려 보세요. 올린 것은 모든 맵 썸네일의 같은 자리에 들어갑니다.</p>
+    <div class="props" id="props" hidden></div>
+  </aside>
+</section>
+
+<!-- ============================================================ 3. metadata -->
+<section class="view meta" id="view-meta" role="tabpanel" hidden>
+  <div class="metacol">
+    <h2>맵팩 정보</h2>
+    <label class="field"><span>맵팩 이름 <em>Title</em></span><input type="text" id="pTitle" maxlength="80" autocomplete="off" spellcheck="false" placeholder="예: Epsilon Pack (Tech)"></label>
+    <div class="two">
+      <label class="field"><span>아티스트 <em>Artist</em></span><input type="text" id="pArtist" maxlength="80" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>제작자 <em>Creator</em></span><input type="text" id="pCreator" maxlength="40" autocomplete="off" spellcheck="false"></label>
+    </div>
+    <label class="field"><span>출처 <em>Source</em></span><input type="text" id="pSource" maxlength="80" autocomplete="off" spellcheck="false"></label>
+    <label class="field"><span>태그 <em>Tags</em> <i class="dim">띄어쓰기로 구분. 모든 난이도에 똑같이 들어갑니다</i></span>
+      <textarea id="pTags" rows="4" spellcheck="false" placeholder="예: 4k practice pack rc tech"></textarea>
+    </label>
+    <div class="row">
+      <button class="btn" type="button" id="tagsFromMaps">맵 제작자 이름을 태그에 넣기</button>
+    </div>
+    <label class="check"><input type="checkbox" id="pResetIds" checked><span class="box"></span>모든 난이도를 미업로드 상태로 바꾸기</label>
+    <p class="hint">모든 난이도의 BeatmapID를 0, BeatmapSetID를 -1로 바꿉니다. 원본 맵의 온라인 ID가 남아 있으면 업로드할 때 다른 사람의 맵으로 인식되므로, 새로 올리는 팩이라면 켜 두세요.</p>
+    <div class="two">
+      <label class="field"><span>OD 통일 <i class="dim">비우면 원본 유지</i></span><input class="num" type="text" id="pOd" inputmode="decimal" placeholder="원본 유지" autocomplete="off"></label>
+      <label class="field"><span>HP 통일 <i class="dim">비우면 원본 유지</i></span><input class="num" type="text" id="pHp" inputmode="decimal" placeholder="원본 유지" autocomplete="off"></label>
+    </div>
+
+    <h2 class="gap">delete 난이도</h2>
+    <label class="check"><input type="checkbox" id="dEnabled" checked><span class="box"></span>delete 난이도 자동 추가</label>
+    <p class="hint">빈 오디오가 들어간 긴 난이도를 하나 넣어 맵셋을 마라톤으로 인식시킵니다. 용량이 큰 맵팩을 업로드하려면 필요합니다.</p>
+    <div id="dBody">
+      <div class="two">
+        <label class="field"><span>난이도명</span><input type="text" id="dName" maxlength="40" autocomplete="off" spellcheck="false"></label>
+        <label class="field"><span>오디오 길이 <i class="dim">분</i></span><input class="num" type="text" id="dMinutes" inputmode="decimal" autocomplete="off"></label>
+      </div>
+      <fieldset>
+        <legend>썸네일</legend>
+        <label class="check"><input type="radio" name="dThumb" value="entry" checked><span class="box round"></span>팩 안의 맵 썸네일 중 하나 사용</label>
+        <select id="dThumbEntry" class="full" aria-label="썸네일로 쓸 맵"></select>
+        <label class="check"><input type="radio" name="dThumb" value="file"><span class="box round"></span>이미지 추가</label>
+        <div class="row" id="dThumbFileRow">
+          <button class="btn" type="button" id="dThumbPick">이미지 고르기</button>
+          <span class="dim clip" id="dThumbName"></span>
+        </div>
+        <label class="check sub" id="dThumbDesignRow"><input type="checkbox" id="dThumbDesign" checked><span class="box"></span>썸네일 창에서 만든 효과와 레이어도 적용</label>
+      </fieldset>
+      <fieldset>
+        <legend>미리듣기 음악</legend>
+        <label class="check"><input type="radio" name="dPrev" value="entry"><span class="box round"></span>팩 안의 음악 중 하나</label>
+        <select id="dPrevEntry" class="full" aria-label="미리듣기로 쓸 맵"></select>
+        <label class="check"><input type="radio" name="dPrev" value="file"><span class="box round"></span>음악 파일 추가</label>
+        <div class="row" id="dPrevFileRow">
+          <button class="btn" type="button" id="dPrevPick">음악 고르기</button>
+          <span class="dim clip" id="dPrevName"></span>
+          <label class="field inline"><span>시작 지점 (초)</span><input class="num short" type="text" id="dPrevStart" inputmode="decimal" autocomplete="off"></label>
+        </div>
+        <label class="check"><input type="radio" name="dPrev" value="none"><span class="box round"></span>아무 음악도 넣지 않기</label>
+        <p class="hint" id="dPrevHint"></p>
+      </fieldset>
+    </div>
+  </div>
+
+  <div class="metacol wide">
+    <h2>난이도명</h2>
+    <div class="tplrow">
+      <label class="field grow"><span>이름 규칙 <i class="dim">{title} {artist} {creator} {version} {rate} {bpm} {dan} {msd} {n}</i></span>
+        <input type="text" id="pTemplate" autocomplete="off" spellcheck="false">
+      </label>
+      <button class="btn" type="button" id="applyTemplate">모든 맵에 다시 적용</button>
+    </div>
+    <p class="hint">맵을 넣을 때 이 규칙대로 이름이 채워집니다. 아래에서 맵마다 직접 고쳐 쓸 수 있고, 직접 고친 이름은 규칙을 바꿔도 그대로 남습니다.</p>
+    <ol class="difflist" id="diffList"></ol>
+    <p class="blank small" id="diffEmpty">팩에 맵을 넣으면 여기에 난이도명이 나타납니다.</p>
+  </div>
+</section>
+
+<!-- ============================================================ rate changer -->
+<section class="view ratev" id="view-rate" role="tabpanel" hidden>
+  <div class="rc-main">
+    <div class="blank" id="rcEmpty">
+      <p class="blank-title">배속 연습 난이도 만들기</p>
+      <p>osu!에서 맵을 고르거나 왼쪽 끝의 "맵 목록"에서 고르세요. 맵 하나를 여러 배속으로 한 번에 만들어 연습용 난이도로 추가합니다. 맵팩과는 따로 동작합니다.</p>
+    </div>
+    <div id="rcBody" hidden>
+      <div class="rc-map">
+        <div class="rc-thumb" id="rcThumb"></div>
+        <div class="rc-maptext">
+          <h2 id="rcTitle"></h2>
+          <p id="rcArtist"></p>
+          <p class="dim" id="rcFacts"></p>
+        </div>
+      </div>
+      <div class="rc-range">
+        <span class="label">배속 범위</span>
+        <input class="num" type="text" id="rcFrom" inputmode="decimal" value="1.10" aria-label="시작 배속" autocomplete="off">
+        <span>부터</span>
+        <input class="num" type="text" id="rcTo" inputmode="decimal" value="1.50" aria-label="끝 배속" autocomplete="off">
+        <span>까지</span>
+        <input class="num" type="text" id="rcStep" inputmode="decimal" value="0.10" aria-label="간격" autocomplete="off">
+        <span>간격으로</span>
+        <button class="btn" type="button" id="rcAddRange">추가</button>
+        <span class="rc-sep" aria-hidden="true"></span>
+        <input class="num" type="text" id="rcOne" inputmode="decimal" placeholder="1.37" aria-label="배속 하나" autocomplete="off">
+        <button class="btn" type="button" id="rcAddOne">하나 추가</button>
+        <div class="grow"></div>
+        <button class="btn quiet" type="button" id="rcClear">모두 지우기</button>
+      </div>
+      <div class="rc-chart" id="rcChart"></div>
+      <ol class="rc-list" id="rcList"></ol>
+      <p class="blank small" id="rcNone">아직 넣은 배속이 없습니다. 위에서 범위를 정해 "추가"를 누르세요.</p>
+    </div>
+  </div>
+  <aside class="rc-side" id="rcSide">
+    <h2>난이도명</h2>
+    <label class="check"><input type="radio" name="rcStyle" value="space"><span class="box round"></span><span>원래 이름 뒤에 배속 <b class="num" id="rcEx1"></b></span></label>
+    <label class="check"><input type="radio" name="rcStyle" value="x"><span class="box round"></span><span>원래 이름 뒤에 배속과 x <b class="num" id="rcEx2"></b></span></label>
+    <label class="check"><input type="radio" name="rcStyle" value="custom"><span class="box round"></span>직접 규칙 쓰기</label>
+    <input type="text" id="rcTemplate" class="full" autocomplete="off" spellcheck="false" aria-label="난이도명 규칙">
+    <p class="hint" id="rcTplHint">{version} 원래 난이도명, {rate} 배속, {bpm}, {dan}, {msd}</p>
+    <label class="check"><input type="checkbox" id="rcDropBase"><span class="box"></span>정배속이 아닌 난이도는 원래 난이도명을 빼고 배속만 적기</label>
+    <label class="check"><input type="checkbox" id="rcTwo"><span class="box"></span>배속을 항상 소수점 둘째 자리까지 적기 <span class="dim num">1.10</span></label>
+
+    <h2 class="gap">소리</h2>
+    <label class="check"><input type="checkbox" id="rcPitch"><span class="box"></span>배속에 따라 피치도 함께 올리거나 내리기</label>
+
+    <h2 class="gap">썸네일</h2>
+    <p class="hint">아무것도 정하지 않으면 원래 썸네일을 그대로 씁니다.</p>
+    <label class="check"><input type="checkbox" id="rcDan"><span class="box"></span>배속마다 예상 난이도 심볼 넣기</label>
+    <ol class="rc-rules" id="rcRules"></ol>
+    <button class="btn" type="button" id="rcAddRule">특정 배속부터 썸네일 바꾸기</button>
+
+    <h2 class="gap">만들 곳</h2>
+    <label class="check"><input type="radio" name="rcDest" value="source"><span class="box round"></span>원본 맵 폴더에 난이도로 추가</label>
+    <label class="check"><input type="radio" name="rcDest" value="packs"><span class="box round"></span>packs 폴더에 따로 만들기</label>
+    <p class="hint">원본 맵 폴더에 추가해도 원래 있던 파일은 바꾸지 않고 새 파일만 더합니다. osu! 곡 선택 화면에서 F5를 누르면 보입니다.</p>
+    <button class="btn primary big full" type="button" id="rcGo">배속 난이도 만들기</button>
+  </aside>
+</section>
+</div>
+</main>
+
+<!-- ============================================================ dialogs -->
+<dialog id="exportDlg" aria-labelledby="exportTitle">
+  <form method="dialog" class="dlg" id="exportForm">
+    <h2 id="exportTitle">내보내기</h2>
+    <div id="exStart">
+      <p class="lead" id="exSummary"></p>
+      <ul class="problems" id="exProblems"></ul>
+      <fieldset>
+        <legend>내보낼 곳</legend>
+        <label class="check"><input type="radio" name="dest" value="packs" checked><span class="box round"></span>프로그램 옆 packs 폴더 <span class="dim clip" id="destPacks"></span></label>
+        <label class="check"><input type="radio" name="dest" value="songs"><span class="box round"></span>osu! Songs 폴더에 바로 넣기 <span class="dim clip" id="destSongs"></span></label>
+      </fieldset>
+      <div class="two">
+        <label class="field"><span>mp3 음질</span>
+          <select id="exBitrate">
+            <option value="128">128 kbps (작은 용량)</option>
+            <option value="160">160 kbps</option>
+            <option value="192" selected>192 kbps (권장)</option>
+            <option value="256">256 kbps</option>
+            <option value="320">320 kbps</option>
+          </select>
+        </label>
+        <label class="check mid"><input type="checkbox" id="exOsz"><span class="box"></span>.osz 파일도 만들기</label>
+      </div>
+      <p class="hint">.ogg, .flac 등 모든 음원은 .mp3로 바뀝니다. 변환과 배속 과정에서 생기는 오프셋 밀림은 맵마다 측정해서 보정하고, 결과를 끝난 뒤에 보여 줍니다.</p>
+      <div class="guide-note" id="exGuide">
+        <strong>업로드 순서 안내</strong>
+        <p>[delete]난이도를 반드시 먼저 업로드 해주세요. 그래야 썸네일 및 맵팩의 미리듣기 재생구간이 먼저 설정됩니다. 그 후에 나머지 난이도들을 다시 넣고 [delete]난이도에 들어가서 맵을 업데이트 해주세요.</p>
+      </div>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>닫기</button>
+        <button class="btn primary" type="button" id="exGo">내보내기 시작</button>
+      </div>
+    </div>
+    <div id="exRun" hidden>
+      <p class="lead" id="exStep" aria-live="polite"></p>
+      <div class="bar"><i id="exBar"></i></div>
+      <ol class="exitems" id="exItems"></ol>
+      <div class="dlg-actions">
+        <button class="btn" type="button" id="exCancel">취소</button>
+      </div>
+    </div>
+    <div id="exDone" hidden>
+      <p class="lead" id="exDoneLead"></p>
+      <p class="path" id="exFolder"></p>
+      <div class="guide-note strong">
+        <strong>업로드 순서 안내</strong>
+        <p>[delete]난이도를 반드시 먼저 업로드 해주세요. 그래야 썸네일 및 맵팩의 미리듣기 재생구간이 먼저 설정됩니다. 그 후에 나머지 난이도들을 다시 넣고 [delete]난이도에 들어가서 맵을 업데이트 해주세요.</p>
+        <ol>
+          <li>내보낸 폴더에서 [delete] 난이도 파일만 남기고 나머지 .osu 파일은 잠시 다른 곳으로 옮깁니다.</li>
+          <li>osu!에서 [delete] 난이도를 열어 업로드합니다. 이때 썸네일과 미리듣기 구간이 정해집니다.</li>
+          <li>옮겨 둔 .osu 파일을 폴더에 다시 넣습니다.</li>
+          <li>osu!에서 다시 [delete] 난이도로 들어가 맵을 업데이트합니다.</li>
+        </ol>
+      </div>
+      <details class="report">
+        <summary>오디오 변환 결과 <span class="dim" id="exReportNote"></span></summary>
+        <table>
+          <thead><tr><th>난이도</th><th>배속</th><th>처리</th><th class="r">보정한 밀림</th><th class="r">보정 후 오차</th></tr></thead>
+          <tbody id="exReport"></tbody>
+        </table>
+        <p class="hint">피치를 함께 바꾸는 방식과 1.00배속 변환은 샘플 단위로 정확합니다. 피치를 유지하는 배속은 변환기 특성상 몇 ms 밀리므로 측정해서 바로잡았고, 남은 오차를 다시 재서 적었습니다.</p>
+      </details>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>닫기</button>
+        <button class="btn primary" type="button" id="exOpen">폴더 열기</button>
+      </div>
+    </div>
+    <div id="exFail" hidden>
+      <p class="lead">내보내지 못했습니다</p>
+      <p class="path" id="exError"></p>
+      <div class="dlg-actions">
+        <button class="btn primary" type="button" data-close>닫기</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="symbolDlg" aria-labelledby="symbolTitle">
+  <div class="dlg wide">
+    <h2 id="symbolTitle">단 심볼 고르기</h2>
+    <div class="row">
+      <div class="seg" id="symFamily" role="radiogroup" aria-label="종류"></div>
+      <div class="grow"></div>
+      <div class="seg" id="symTier" role="radiogroup" aria-label="단계"></div>
+    </div>
+    <div class="symgrid" id="symGrid"></div>
+    <div class="customsym">
+      <div class="row">
+        <strong>커스텀 단위인정 심볼 추가</strong>
+        <button class="btn" type="button" id="symAdd">이미지 추가</button>
+        <span class="dim">직접 만든 심볼을 넣습니다. 다음에 켜도 그대로 남습니다.</span>
+      </div>
+      <p class="hint">이름 끝에 ++, +, -, -- 를 붙이면 그 단계 칸에 나타납니다 (예: mydan+). 기존 단위인정 심볼과 같은 이름은 쓸 수 없습니다.</p>
+      <ol class="customlist" id="symCustomList"></ol>
+    </div>
+    <div class="dlg-actions">
+      <button class="btn" type="button" data-close>닫기</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="confirmDlg">
+  <div class="dlg narrow">
+    <p class="lead" id="confirmText"></p>
+    <div class="dlg-actions">
+      <button class="btn" type="button" id="confirmNo">취소</button>
+      <button class="btn primary" type="button" id="confirmYes">확인</button>
+    </div>
+  </div>
+</dialog>
+
+<input type="file" id="filePick" hidden>
+<audio id="player" preload="none"></audio>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<div class="tipfloat" id="tipFloat" role="tooltip" hidden></div>
+<div class="dead" id="dead" role="alert" hidden>
+  <p><strong>프로그램과의 연결이 끊어졌습니다.</strong></p>
+  <p>이 창을 닫고 Map Pack Create.exe를 다시 실행해 주세요. 만들던 팩 구성은 저장되어 있습니다.</p>
+</div>
+
+<script src="editor.js"></script>
+<script src="app.js"></script>
+<script src="parts.js"></script>
+</body>
+</html>

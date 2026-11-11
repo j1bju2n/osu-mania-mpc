@@ -1,0 +1,27 @@
+Dan badge artwork from Mania Tracker (https://github.com/aleju03/mania-hub, public/images/dans), unchanged.
+reform = 4K (1-10, alpha-kappa), ln = 4K LN (1-17), 7k = 7K (plain = regular, ln- = LN), 6k = 6K (plain = regular, ln- = LN).
+File suffixes: -low = "--", -mid-low = "-", none = mid, -mid-high = "+", -high = "++".
+According to the source, the 6K glyphs are traced from the dan course backgrounds (Arkman regular, sunnyxxy LN)
+and the 7K ladder is the JinJin 7K courses: the course marks belong to their course authors.
+
+MIT License
+
+Copyright (c) 2026 aleju03
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
