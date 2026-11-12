@@ -233,6 +233,7 @@
             <option value="color">색조만</option>
           </select>
         </div>
+        <div id="fxTintGrad"></div>
         <label class="slider"><span>색 세기</span><input type="range" data-fx="tint" min="0" max="100" step="1"><output class="num"></output></label>
         <div class="row">
           <button class="btn quiet" type="button" id="fxReset">효과 초기화</button>
@@ -311,11 +312,26 @@
       <label class="field"><span>제작자 <em>Creator</em></span><input type="text" id="pCreator" maxlength="40" autocomplete="off" spellcheck="false"></label>
     </div>
     <label class="field"><span>출처 <em>Source</em></span><input type="text" id="pSource" maxlength="80" autocomplete="off" spellcheck="false"></label>
-    <label class="field"><span>태그 <em>Tags</em> <i class="dim">띄어쓰기로 구분. 모든 난이도에 똑같이 들어갑니다</i></span>
+    <label class="field"><span>태그 <em>Tags</em> <i class="dim" id="pTagsNote">띄어쓰기로 구분. 모든 난이도에 똑같이 들어갑니다</i></span>
       <textarea id="pTags" rows="4" spellcheck="false" placeholder="예: 4k practice pack rc tech"></textarea>
     </label>
     <div class="row">
       <button class="btn" type="button" id="tagsFromMaps">맵 제작자 이름을 태그에 넣기</button>
+    </div>
+    <div class="row tagsper">
+      <label class="check"><input type="checkbox" id="pTagsPer"><span class="box"></span>맵마다 태그를 따로 지정</label>
+      <button class="warn" type="button" aria-label="맵별 태그 안내" data-tip="osu! 안에서 검색할 때는 난이도마다 그 난이도의 태그를 봅니다. 사이트에는 맵셋 전체에 태그가 하나만 남습니다. 공개된 osu! 업로드 서버 코드는 난이도마다 태그가 다른 맵셋을 거부하므로, 업로드가 거부되면 이 설정을 끄고 다시 내보내세요.">!</button>
+    </div>
+    <div id="tagsPerBody" hidden>
+      <div class="seg full" role="radiogroup" aria-label="맵별 태그를 넣는 방식">
+        <label><input type="radio" name="tagsMode" value="add" checked><span>공통 태그 뒤에 덧붙이기</span></label>
+        <label><input type="radio" name="tagsMode" value="own"><span>공통 태그 대신 쓰기</span></label>
+      </div>
+      <p class="hint" id="tagsPerHint"></p>
+      <div class="row">
+        <button class="btn" type="button" id="tagsFromOriginal">모든 맵에 원본 맵의 태그 가져오기</button>
+        <button class="btn quiet danger" type="button" id="tagsPerClear">맵별 태그 모두 지우기</button>
+      </div>
     </div>
     <label class="check"><input type="checkbox" id="pResetIds" checked><span class="box"></span>모든 난이도를 미업로드 상태로 바꾸기</label>
     <p class="hint" id="pResetHint"></p>
@@ -364,7 +380,7 @@
   </div>
 
   <div class="metacol wide">
-    <h2>난이도명</h2>
+    <h2 id="diffHead">난이도명</h2>
     <div class="tplrow">
       <label class="field grow"><span>이름 규칙 <i class="dim">{title} {artist} {creator} {version} {rate} {bpm} {dan} {msd} {n}</i></span>
         <input type="text" id="pTemplate" autocomplete="off" spellcheck="false">

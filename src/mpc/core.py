@@ -578,6 +578,7 @@ class ExportJob:
             if not 0.5 <= rate <= 2.0:
                 raise ExportError('%s: 배속은 0.50 ~ 2.00 사이여야 합니다.' % info['title'])
             version = ' '.join(str(raw.get('version') or '').split()) or info['version'] or 'Map %d' % (i + 1)
+            own_tags = raw.get('tags')                  # this map's own tags, when the pack sets them per map
             base, n = version, 2
             while version.lower() in used:
                 version = '%s (%d)' % (base, n)
@@ -586,6 +587,7 @@ class ExportJob:
             self.entries.append({
                 'uid': str(raw.get('uid') or i), 'index': i, 'path': lib['path'], 'info': info, 'source': source,
                 'rate': rate, 'follow': bool(raw.get('followPitch')), 'version': version,
+                'tags': ' '.join(own_tags.split()) if isinstance(own_tags, str) else None,
                 'image': 'bg%02d.%s' % (i + 1, self.image_ext), 'audio': '', 'status': 'wait', 'report': None,
             })
 
@@ -726,7 +728,10 @@ class ExportJob:
             f.write(text)
 
     def _chart_meta(self, e):
-        return dict(self.meta, Version=e['version'])
+        meta = dict(self.meta, Version=e['version'])
+        if e.get('tags') is not None:
+            meta['Tags'] = e['tags']
+        return meta
 
     def _chart_background(self, e):
         return e['image'] if e['image'] in self.images else ''

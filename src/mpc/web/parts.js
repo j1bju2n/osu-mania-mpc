@@ -416,6 +416,10 @@
     mode.addEventListener('change', () => { rule.fx.tintMode = mode.value; M.changed(); redraw(); });
     tint.append(el('span', null, '색 입히기'), color, mode);
     li.append(tint);
+    li.append(window.Thumb.gradControls(() => rule.fx.tintGrad, v => {
+      rule.fx.tintGrad = v;
+      if (v && !rule.fx.tint) { rule.fx.tint = 40; syncTint(); }
+    }, () => rule.fx.tintColor || '#000000', { begin() {}, live() { M.changed(); redraw(); }, done() { M.changed(); redraw(); } }));
     slider('색 세기', 'tint', 0, 100);
     const syncTint = () => { const s = li.querySelectorAll('.slider'); const last = s[s.length - 1]; last.querySelector('input').value = rule.fx.tint; last.querySelector('output').textContent = rule.fx.tint; };
     redraw();

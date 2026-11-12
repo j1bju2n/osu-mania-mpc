@@ -108,6 +108,20 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
   - 주의: Browser 창에서 같은 주소(#만 다른)로 `navigate`하면 새로 고쳐지지 않는다. CSS/JS를 바꾼 뒤에는 `location.reload()`.
     헤더는 `min-width:0`이라 좁은 창에서 "수정 중" 칩이 먼저 줄어든다 (기본 창 1480에서 모두 보임).
 
+- 0.6.0 (2026-11-12 오너 요청):
+  - **그라디언트**: 색을 정하는 곳마다 켤 수 있다. 저장 형식은 색 키 옆의 `{color, angle, kind}` (없거나 null = 단색):
+    도형·글자 `layer.colorGrad`, 글자 테두리 `layer.strokeGrad`, 심볼·이미지 색 입히기 `layer.tintGrad`(STYLE에 포함 → "이 맵만" 가능),
+    효과 색 입히기 `fx.tintGrad`(레이트 체인저의 규칙 `rule.fx`도 같음). 그리기는 `paint(ctx, color, grad, x, y, w, h)`,
+    조작부는 `Thumb.gradControls(grad, store, first, hooks)` 하나를 모든 곳에서 쓴다. 0° = 왼→오, 90° = 위→아래, `radial` = 가운데→바깥.
+    글자는 줄마다가 아니라 글자 덩어리 전체에 걸친다.
+  - **맵별 태그**: `pack.tagsPerMap`, `pack.tagsMode`(`add` = 공통 뒤에 덧붙임·중복 제거, `own` = 대신 씀), `entry.tags`.
+    화면이 `tagsFor(e)`로 합친 문자열을 내보내기 요청의 `entries[].tags`로 보내고, `core`는 그것을 그 난이도의 `Tags`로 쓴다
+    (없으면 팩 태그). delete 난이도는 공통 태그. 기존 맵팩 수정에서 "메타데이터도 통일"을 끈 그대로 둔 난이도에는 적용되지 않는다.
+    **주의**: 공개된 업로드 서버(`BeatmapPackageParser.getSingleValueFrom`)는 난이도마다 Tags가 다르면
+    "inconsistent Tags"로 거부한다. stable 서버가 같은지는 확인 못 함 → 내보내기 때 경고만 띄운다(막지는 않음).
+  - GitHub 공개 (`j1bju2n/osu-mania-mpc`): 올리기 전에 커밋 기록에서 예전 `mmr-calc.exe`(Windows 계정 이름이 든 빌드)를
+    지금 것으로 바꿔 다시 썼다. **공개 전 점검**: `python tools/scan_private.py`로 exe를, `git grep`으로 계정 이름·경로를 확인.
+
 ## 구조
 - `src/mpc/` 본체, **표준 라이브러리만** 사용.
   - `osudb.py` osu!.db 파싱(mania만) + db에 없는 Songs 폴더는 직접 읽기. 읽기 전용.

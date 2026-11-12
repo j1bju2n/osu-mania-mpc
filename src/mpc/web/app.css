@@ -683,3 +683,18 @@ main { overflow: clip; }
 .top { min-width: 0; max-width: 100vw; }
 .top > .btn, .top > .steps, .top > .brand { flex: none; }
 .editchip { flex: 0 1 auto; min-width: 0; }
+
+/* ---------- 0.6: gradients, per-map tags */
+.grad { margin-top: 6px; }
+.grad > .check { margin-top: 0; font-size: 13px; }
+.gradset { margin-top: 6px; padding: 8px 10px 10px; background: var(--up); border-radius: 6px; }
+.gradset .line { display: flex; align-items: center; gap: 8px; margin-top: 0; font-size: 13px; color: var(--ink-2); }
+.gradset .line > span { width: 44px; flex: none; }
+.gradset .line select { flex: 1; min-width: 0; height: 28px; }
+.gradset .slider { grid-template-columns: 44px 1fr 38px; }
+.tagsper { margin-top: 12px; }
+.tagsper .check { margin-top: 0; }
+#tagsPerBody { margin-top: 10px; padding: 12px 14px 14px; background: var(--up); border-radius: 6px; }
+#tagsPerBody .row { flex-wrap: wrap; }
+.difflist .tagsin .lab { font-size: 12px; color: var(--ink-3); flex: none; }
+.difflist .len.wide { width: 62px; }

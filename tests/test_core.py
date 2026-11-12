@@ -158,7 +158,8 @@ def test_real_export():
             {'uid': 'a', 'md5': picks[0]['md5'], 'rate': 1.0, 'followPitch': False, 'version': 'One [1.00x]'},
             {'uid': 'b', 'md5': picks[1]['md5'], 'rate': 1.15, 'followPitch': True, 'version': 'Two [1.15x]'},
             {'uid': 'c', 'md5': picks[1]['md5'], 'rate': 1.3, 'followPitch': False, 'version': 'Two [1.30x]'},
-            {'uid': 'd', 'md5': picks[0]['md5'], 'rate': 0.9, 'followPitch': False, 'version': 'One [0.90x]'},
+            {'uid': 'd', 'md5': picks[0]['md5'], 'rate': 0.9, 'followPitch': False, 'version': 'One [0.90x]',
+             'tags': 'test pack  its own'},
         ],
         'bitrate': 192, 'imageFormat': 'jpg', 'osz': True, 'dest': 'packs',
         'delete': {'enabled': True, 'name': 'delete', 'minutes': 10,
@@ -211,6 +212,9 @@ def test_real_export():
     check('chart: metadata', (info['title'], info['creator'], info['version'], info['tags'], info['set_id'])
           == ('Test Pack', 'Tester', 'Two [1.30x]', 'test pack', -1), info)
     check('chart: audio + od', info['audio'] == 'audio03.mp3' and info['od'] == 8.0)
+    own = osufile.info_from_text(osufile.read(os.path.join(plan['folder'], [f for f in files if '[One [0.90x]]' in f][0])))
+    check('chart: a map given tags of its own carries them, the rest the pack tags',
+          own['tags'] == 'test pack its own' and own['title'] == 'Test Pack', own['tags'])
     check('chart: last note scaled', abs(info['last_ms'] - src_info['last_ms'] / 1.3) <= 1,
           (info['last_ms'], src_info['last_ms']))
     check('chart: note count kept', info['notes'] == src_info['notes'])

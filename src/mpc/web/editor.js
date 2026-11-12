@@ -7,7 +7,7 @@
   const BASE_W = 1920, BASE_H = 1080;
   const FONTS = ['Bahnschrift', 'Segoe UI', 'Malgun Gothic', 'Impact', 'Arial Black', 'Georgia', 'Times New Roman', 'Consolas'];
   const FX_DEFAULT = { dim: 0, blur: 0, contrast: 100, saturate: 100, noise: 0, grain: 2, noiseColor: false,
-    vignette: 0, scan: 0, tint: 0, tintColor: '#000000', tintMode: 'source-over' };
+    vignette: 0, scan: 0, tint: 0, tintColor: '#000000', tintMode: 'source-over', tintGrad: null };
   const TIERS = [['--', '-low'], ['-', '-mid-low'], ['', ''], ['+', '-mid-high'], ['++', '-high']];
   const GREEK = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa'];
   const FAMILIES = [
@@ -154,7 +154,7 @@
     if (fx.tint > 0) {
       ctx.globalCompositeOperation = fx.tintMode || 'source-over';
       ctx.globalAlpha = fx.tint / 100;
-      ctx.fillStyle = fx.tintColor || '#000000';
+      ctx.fillStyle = paint(ctx, fx.tintColor || '#000000', fx.tintGrad, 0, 0, W, H);
       ctx.fillRect(0, 0, W, H);
       ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
     }
@@ -223,9 +223,26 @@
     }
   }
 
+  /* What to fill with: the colour, or a blend from it to a second colour across the box x, y, w, h
+     (grad = {color, angle, kind}; angle 0 runs left to right, 90 top to bottom; kind 'radial' runs from the
+     middle outwards). */
+  function paint(ctx, color, grad, x, y, w, h) {
+    if (!grad || !grad.color) return color;
+    const cx = x + w / 2, cy = y + h / 2;
+    let g;
+    if (grad.kind === 'radial') g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(1, Math.hypot(w, h) / 2));
+    else {
+      const a = (grad.angle == null ? 90 : Number(grad.angle) || 0) * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a);
+      const half = Math.max(0.5, (Math.abs(dx) * w + Math.abs(dy) * h) / 2);
+      g = ctx.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
+    }
+    try { g.addColorStop(0, color); g.addColorStop(1, grad.color); } catch (e) { return color; }
+    return g;
+  }
+
   const ownSymbol = (layer, entry) => (entry.symbols && entry.symbols[layer.id]) || null;
   const GEO = ['x', 'y', 'w', 'h', 'rot', 'size'];
-  const STYLE = ['hue', 'tint', 'tintColor', 'tintMode', 'opacity', 'shadow'];
+  const STYLE = ['hue', 'tint', 'tintColor', 'tintMode', 'tintGrad', 'opacity', 'shadow'];
   const UNDER_TAG = { grain: '노이즈 아래', all: '효과 아래' };
   const hasKeys = o => !!o && Object.keys(o).length > 0;
 
@@ -260,7 +277,7 @@
     if (amount) {
       g.globalCompositeOperation = layer.tintMode || 'color';
       g.globalAlpha = amount / 100;
-      g.fillStyle = layer.tintColor || '#ffffff';
+      g.fillStyle = paint(g, layer.tintColor || '#ffffff', layer.tintGrad, 0, 0, c.width, c.height);
       g.fillRect(0, 0, c.width, c.height);
       g.globalAlpha = 1;
       g.globalCompositeOperation = 'destination-in';
@@ -281,7 +298,7 @@
     }
     if (layer.type === 'rect') {
       const w = layer.w * s, h = layer.h * s, r = clamp((layer.radius || 0) * s, 0, Math.min(w, h) / 2);
-      ctx.fillStyle = layer.color || '#000000';
+      ctx.fillStyle = paint(ctx, layer.color || '#000000', layer.colorGrad, -w / 2, -h / 2, w, h);
       ctx.beginPath();
       ctx.roundRect(-w / 2, -h / 2, w, h, r);
       ctx.fill();
@@ -292,16 +309,20 @@
       const align = layer.align || 'center';
       ctx.textAlign = align;
       const ax = align === 'left' ? -box.w * s / 2 : align === 'right' ? box.w * s / 2 : 0;
+      // a blend runs across the whole block of text, not line by line
+      const bx = -box.w * s / 2, by = -box.h * s / 2, bw = box.w * s, bh = box.h * s;
+      const fill = paint(ctx, layer.color || '#ffffff', layer.colorGrad, bx, by, bw, bh);
+      const edge = paint(ctx, layer.strokeColor || '#000000', layer.strokeGrad, bx, by, bw, bh);
       box.lines.forEach((line, i) => {
         const y = (i - (box.lines.length - 1) / 2) * lh;
         if (layer.stroke > 0) {
           ctx.lineJoin = 'round';
           ctx.lineWidth = layer.stroke * s * 2;
-          ctx.strokeStyle = layer.strokeColor || '#000000';
+          ctx.strokeStyle = edge;
           ctx.strokeText(line, ax, y);
           ctx.shadowColor = 'transparent';
         }
-        ctx.fillStyle = layer.color || '#ffffff';
+        ctx.fillStyle = fill;
         ctx.fillText(line, ax, y);
       });
     } else {
@@ -655,6 +676,56 @@
     return line;
   }
 
+  const lightOf = hex => { const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+    return m ? (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 : 0; };
+
+  /* The controls that turn a colour into a blend: a switch, the end colour, straight or round, the direction.
+     grad() gives what is stored now ({color, angle, kind} or nothing), store(v) keeps a new value (null = off),
+     first() is the colour the blend starts from. hooks: begin (before a change), live (while dragging),
+     done (a change is finished). Used by every colour setting, here and in the rate changer. */
+  function gradControls(grad, store, first, hooks) {
+    const now = grad() || null, box = el('div', 'grad');
+    const sw = el('label', 'check');
+    const cb = el('input');
+    cb.type = 'checkbox'; cb.checked = !!now;
+    sw.append(cb, el('span', 'box'), document.createTextNode('그라디언트'));
+    const set = el('div', 'gradset');
+    set.hidden = !now;
+    const line = el('div', 'line');
+    const color = el('input');
+    color.type = 'color'; color.value = (now && now.color) || '#ffffff'; color.setAttribute('aria-label', '그라디언트 끝 색');
+    const kind = el('select');
+    [['linear', '직선'], ['radial', '원형 (가운데에서 바깥으로)']].forEach(([v, t]) => { const o = el('option', null, t); o.value = v; kind.append(o); });
+    kind.value = now && now.kind === 'radial' ? 'radial' : 'linear';
+    kind.setAttribute('aria-label', '그라디언트 모양');
+    line.append(el('span', null, '끝 색'), color, kind);
+    const dir = el('label', 'slider');
+    const range = el('input'), out = el('output', 'num');
+    range.type = 'range'; range.min = 0; range.max = 360; range.step = 5;
+    range.value = now && now.angle != null ? now.angle : 90;
+    out.textContent = range.value + '°';
+    dir.append(el('span', null, '방향'), range, out);
+    dir.hidden = kind.value === 'radial';
+    set.append(line, dir);
+    let armed = false;
+    const begin = () => { if (!armed) { hooks.begin(); armed = true; } };
+    const write = () => store({ color: color.value, angle: Number(range.value), kind: kind.value });
+    cb.addEventListener('change', () => {
+      hooks.begin();
+      if (cb.checked) { color.value = lightOf(first()) > 0.5 ? '#000000' : '#ffffff'; write(); } else store(null);
+      set.hidden = !cb.checked;
+      hooks.done();
+    });
+    color.addEventListener('input', () => { begin(); write(); hooks.live(); });
+    color.addEventListener('change', () => { armed = false; hooks.done(); });
+    range.addEventListener('input', () => { begin(); out.textContent = range.value + '°'; write(); hooks.live(); });
+    range.addEventListener('change', () => { armed = false; hooks.done(); });
+    kind.addEventListener('change', () => { hooks.begin(); dir.hidden = kind.value === 'radial'; write(); hooks.done(); });
+    box.append(sw, set);
+    return box;
+  }
+  const GRAD_HOOKS = { begin: () => snapshot(), live: () => { app.changed(); draw(); }, done: () => changed() };
+
   function renderProps() {
     const host = $('props'), layer = layerById(ed.sel);
     const focused = document.activeElement && host.contains(document.activeElement) && document.activeElement.tagName === 'TEXTAREA';
@@ -790,7 +861,11 @@
       mode.value = g.tintMode || 'color';
       mode.addEventListener('change', () => { snapshot(); ST().tintMode = mode.value; changed(); });
       line.append(color, mode);
-      host.append(line, sliderLine('색 세기', g.tint || 0, 0, 100, 1, v => { ST().tint = v; }));
+      host.append(line, gradControls(() => g.tintGrad, v => {
+        const t = ST();
+        t.tintGrad = v;
+        if (v && !placed(layer, shownEntry()).tint) t.tint = 100;
+      }, () => g.tintColor || '#ffffff', GRAD_HOOKS), sliderLine('색 세기', g.tint || 0, 0, 100, 1, v => { ST().tint = v; }));
     }
     if (layer.type === 'image') {
       const b = el('button', 'btn', '다른 이미지로 바꾸기');
@@ -806,7 +881,8 @@
       });
       host.append(b);
     } else if (layer.type === 'rect') {
-      host.append(colorLine('색', layer.color || '#000000', v => { layer.color = v; }));
+      host.append(colorLine('색', layer.color || '#000000', v => { layer.color = v; }),
+        gradControls(() => layer.colorGrad, v => { layer.colorGrad = v; }, () => layer.color || '#000000', GRAD_HOOKS));
     } else if (layer.type === 'text') {
       const area = el('textarea');
       area.rows = 2; area.value = layer.text || ''; area.spellcheck = false;
@@ -839,8 +915,10 @@
       sel2.addEventListener('change', () => { snapshot(); layer.align = sel2.value; changed(); });
       alignLine.append(sel2);
       host.append(alignLine, colorLine('글자 색', layer.color || '#ffffff', v => { layer.color = v; }),
+        gradControls(() => layer.colorGrad, v => { layer.colorGrad = v; }, () => layer.color || '#ffffff', GRAD_HOOKS),
         sliderLine('테두리', layer.stroke || 0, 0, 30, 1, v => { layer.stroke = v; }),
-        colorLine('테두리 색', layer.strokeColor || '#000000', v => { layer.strokeColor = v; }));
+        colorLine('테두리 색', layer.strokeColor || '#000000', v => { layer.strokeColor = v; }),
+        gradControls(() => layer.strokeGrad, v => { layer.strokeGrad = v; }, () => layer.strokeColor || '#000000', GRAD_HOOKS));
     }
     const dup = el('button', 'btn quiet', '복제');
     dup.type = 'button'; dup.style.marginTop = '12px';
@@ -1173,6 +1251,14 @@
     $('fxScopeNote').textContent = one ? what + '에만 적용됩니다: 효과, 그리고 심볼·글자 등을 옮기거나 크기·색조·불투명도를 바꾸는 것. 나머지는 그대로입니다.'
       : (entry && entry.fx ? '모든 맵에 똑같이 적용됩니다. 단, ' + what + '은(는) 따로 정한 효과를 쓰고 있어 여기서 바꿔도 달라지지 않습니다.' : '모든 맵에 똑같이 적용됩니다.');
     $('fxOneClear').hidden = !(entry && entry.fx);
+    const gradHost = $('fxTintGrad');
+    gradHost.textContent = '';
+    gradHost.append(gradControls(() => fxShown().tintGrad, v => {
+      const target = fxTarget();
+      target.tintGrad = v;
+      if (v && !target.tint) target.tint = 40;
+    }, () => fxShown().tintColor || '#000000',
+    { begin: () => snapshot(), live: () => { app.changed(); draw(); }, done: () => { changed(); syncControls(); } }));
     document.querySelectorAll('input[name="bgMode"]').forEach(r => { r.checked = r.value === (t.bgMode || 'each'); });
     $('commonRow').hidden = t.bgMode !== 'common';
     $('commonName').textContent = t.commonAsset ? (t.commonName || '고른 이미지') : '아직 고르지 않았습니다';
@@ -1285,6 +1371,6 @@
 
   function reset() { ed.undo = []; ed.sel = null; ed.uid = null; ed.fxScope = 'all'; }
 
-  window.Thumb = { init, refresh, reset, defaults, render, exportBlob, blobWith, fillTokens, entryFor, FX_DEFAULT,
+  window.Thumb = { init, refresh, reset, defaults, render, exportBlob, blobWith, fillTokens, entryFor, FX_DEFAULT, gradControls,
     show(uid) { ed.uid = uid; } };
 })();

@@ -85,7 +85,7 @@
   function newProject() {
     return {
       v: 2, rc: newRc(), edit: null, saveName: '',
-      pack: { title: '', artist: 'Various Artists', creator: S.lib.player || '', source: '', tags: '', resetIds: true,
+      pack: { title: '', artist: 'Various Artists', creator: S.lib.player || '', source: '', tags: '', tagsPerMap: false, tagsMode: 'add', resetIds: true,
         od: '', hp: '', template: '{title} [{rate}x] ({creator})' },
       entries: [],
       thumb: Thumb.defaults(),
@@ -816,6 +816,15 @@
     $('pTitle').value = pk.title; $('pArtist').value = pk.artist; $('pCreator').value = pk.creator;
     $('pSource').value = pk.source; $('pTags').value = pk.tags; $('pResetIds').checked = pk.resetIds !== false;
     $('pResetIds').disabled = !!p.edit;
+    $('pTagsPer').checked = !!pk.tagsPerMap;
+    $('tagsPerBody').hidden = !pk.tagsPerMap;
+    document.querySelectorAll('input[name="tagsMode"]').forEach(r => { r.checked = r.value === (pk.tagsMode === 'own' ? 'own' : 'add'); });
+    $('pTagsNote').textContent = pk.tagsPerMap ? '띄어쓰기로 구분. 공통 태그: 모든 난이도와 delete 난이도에 들어갑니다' : '띄어쓰기로 구분. 모든 난이도에 똑같이 들어갑니다';
+    $('tagsPerHint').textContent = (pk.tagsMode === 'own'
+      ? '오른쪽 목록에서 맵마다 태그를 적습니다. 적은 맵은 그 태그만 들어가고, 비워 둔 맵은 공통 태그가 들어갑니다.'
+      : '오른쪽 목록에서 맵마다 더 넣을 태그를 적습니다. 공통 태그 뒤에 붙고, 겹치는 말은 한 번만 들어갑니다.')
+      + (p.edit && !p.edit.unify ? ' 기존 맵팩 수정에서 "메타데이터도 통일"을 끄면 그대로 둔 난이도의 태그는 바뀌지 않습니다.' : '');
+    $('diffHead').textContent = pk.tagsPerMap ? '난이도명 · 맵별 태그' : '난이도명';
     $('pResetHint').textContent = p.edit
       ? '기존 맵셋을 고치는 중이라 이 설정은 쓰지 않습니다. 모든 난이도에 맵셋의 온라인 ID(' + p.edit.setId + ')가 들어가고, 원래 난이도의 자리를 이은 난이도는 그 BeatmapID를 그대로 가집니다.'
       : '모든 난이도의 BeatmapID를 0, BeatmapSetID를 -1로 바꿉니다. 원본 맵의 온라인 ID가 남아 있으면 업로드할 때 다른 사람의 맵으로 인식되므로, 새로 올리는 팩이라면 켜 두세요.';
@@ -842,6 +851,20 @@
       ? '사이트에서 맵팩의 재생 버튼을 눌러도 아무 소리도 나지 않습니다.'
       : 'delete 난이도의 빈 오디오 한가운데에 이 음악이 30초 들어가고, 그 지점이 미리듣기 시작점(PreviewTime)으로 자동 설정됩니다. 전체 길이는 그대로 유지됩니다.';
     renderDiffList();
+  }
+
+  const TAGS_MAX = 1000;
+  const words = s => String(s || '').split(/\s+/).filter(Boolean);
+
+  /* The tags one map is exported with: the pack's, or with "맵마다 태그를 따로 지정" on, the pack's plus its own
+     (no word twice) or its own alone. A map with no tags of its own always gets the pack's. */
+  function tagsFor(e) {
+    const pk = S.project.pack, common = words(pk.tags), own = words(e.tags);
+    if (!pk.tagsPerMap || !own.length) return common.join(' ');
+    if (pk.tagsMode === 'own') return own.join(' ');
+    const have = new Set(common.map(w => w.toLowerCase())), out = common.slice();
+    own.forEach(w => { if (!have.has(w.toLowerCase())) { have.add(w.toLowerCase()); out.push(w); } });
+    return out.join(' ');
   }
 
   function renderDiffList() {
@@ -878,9 +901,34 @@
       again.addEventListener('click', () => { e.versionEdited = false; e.version = versionFor(e, i); renderDiffList(); changed(); });
       line.append(input, len, again);
       body.append(src, line);
+      if (p.pack.tagsPerMap) {
+        const row = el('div', 'in tagsin');
+        const tags = el('input');
+        tags.type = 'text'; tags.value = e.tags || ''; tags.spellcheck = false; tags.autocomplete = 'off';
+        tags.placeholder = p.pack.tagsMode === 'own' ? '이 맵의 태그 (비우면 공통 태그)' : '이 맵에만 더 넣을 태그';
+        tags.setAttribute('aria-label', (i + 1) + '번 맵의 태그');
+        const count = el('span', 'len wide');
+        const show = () => { const n = tagsFor(e).length; count.textContent = n + '/' + TAGS_MAX; count.classList.toggle('over', n > TAGS_MAX); };
+        show();
+        tags.addEventListener('input', () => { e.tags = tags.value; show(); changed(); });
+        const orig = el('button', 'btn quiet', '원본 태그');
+        orig.type = 'button'; orig.title = '원본 맵에 적혀 있던 태그를 가져옵니다';
+        orig.addEventListener('click', async () => {
+          const got = await originalTags(e);
+          if (got == null) { toast('원본 맵을 읽지 못했습니다.'); return; }
+          if (!got) { toast('원본 맵에 태그가 없습니다.'); return; }
+          e.tags = got; tags.value = got; show(); changed();
+        });
+        row.append(el('span', 'lab', '태그'), tags, count, orig);
+        body.append(row);
+      }
       li.append(el('span', 'idx', String(i + 1)), th, body);
       list.append(li);
     });
+  }
+
+  async function originalTags(e) {
+    try { const d = await api('/api/map?md5=' + e.md5); return d ? words(d.tags).join(' ') : null; } catch (err) { return null; }
   }
 
   function bindMeta() {
@@ -890,7 +938,24 @@
     text('pArtist', v => { pk().artist = v; });
     text('pCreator', v => { pk().creator = v; });
     text('pSource', v => { pk().source = v; });
-    text('pTags', v => { pk().tags = v; });
+    text('pTags', v => { pk().tags = v; }, () => { if (pk().tagsPerMap) renderDiffList(); });
+    $('pTagsPer').addEventListener('change', ev => { pk().tagsPerMap = ev.target.checked; renderMeta(); changed(); });
+    document.querySelectorAll('input[name="tagsMode"]').forEach(r => r.addEventListener('change', () => { pk().tagsMode = r.value; renderMeta(); changed(); }));
+    $('tagsFromOriginal').addEventListener('click', async () => {
+      const list = S.project.entries;
+      if (!list.length) { toast('팩에 넣은 맵이 없습니다.'); return; }
+      if (list.some(e => (e.tags || '').trim()) && !(await confirmBox('이미 적어 둔 맵별 태그를 원본 맵의 태그로 바꿀까요?', { yes: '원본 태그로 바꾸기' }))) return;
+      let n = 0;
+      for (const e of list) { const got = await originalTags(e); if (got != null) { e.tags = got; if (got) n++; } }
+      renderDiffList(); changed();
+      toast(n ? '맵 ' + n + '개에 원본 태그를 가져왔습니다.' : '가져올 원본 태그가 없습니다.');
+    });
+    $('tagsPerClear').addEventListener('click', async () => {
+      if (!S.project.entries.some(e => (e.tags || '').trim())) { toast('지울 맵별 태그가 없습니다.'); return; }
+      if (!(await confirmBox('맵마다 따로 적은 태그를 모두 지울까요? 공통 태그는 그대로 둡니다.', { danger: true, yes: '맵별 태그 모두 지우기' }))) return;
+      S.project.entries.forEach(e => { delete e.tags; });
+      renderDiffList(); changed();
+    });
     text('pOd', v => { pk().od = v.trim(); });
     text('pHp', v => { pk().hp = v.trim(); });
     text('pTemplate', v => { pk().template = v; }, () => { applyTemplate(false); renderDiffList(); });
@@ -959,6 +1024,13 @@
     if (p.entries.some(e => (e.version || '').length > NOTICE_MAX)) warn('난이도명이 80자를 넘는 맵이 있습니다. osu!에서 잘릴 수 있습니다.');
     if (p.thumb.format === 'png') warn('썸네일이 png입니다. 화질은 좋지만 맵팩 용량이 커져 업로드가 힘들 수 있습니다.');
     if (!p.pack.tags.trim()) warn('태그가 비어 있습니다.');
+    if (p.pack.tagsPerMap) {
+      const each = p.entries.map(tagsFor);
+      if (each.some(t => t.length > TAGS_MAX)) warn('태그가 1000자를 넘는 맵이 있습니다. 업로드가 거부될 수 있습니다.');
+      if (new Set(each.concat(p.delete.enabled ? [words(p.pack.tags).join(' ')] : [])).size > 1) {
+        warn('난이도마다 태그가 다릅니다. 사이트에는 맵셋 태그가 하나만 남고, 공개된 osu! 업로드 서버 코드는 태그가 다른 맵셋을 거부합니다 ("inconsistent Tags"). 업로드가 거부되면 메타데이터의 "맵마다 태그를 따로 지정"을 끄고 다시 내보내세요.');
+      }
+    }
     if (!p.delete.enabled && !p.edit) warn('delete 난이도를 넣지 않습니다. 용량이 큰 팩은 업로드가 막힐 수 있습니다.');
     return list;
   }
@@ -995,7 +1067,7 @@
     const payload = {
       pack: p.pack, bitrate: S.settings.bitrate, imageFormat: p.thumb.format, osz: S.settings.osz, dest: S.settings.dest,
       entries: p.entries.map(e => ({ uid: e.uid, md5: e.md5, rate: e.rate, followPitch: !!e.followPitch, version: (e.version || '').trim(),
-        slot: p.edit ? e.slot || 0 : 0 })),
+        slot: p.edit ? e.slot || 0 : 0, tags: p.pack.tagsPerMap ? tagsFor(e) : undefined })),
       delete: { enabled: p.delete.enabled, name: p.delete.name, minutes: p.delete.minutes,
         preview: { mode: p.delete.preview.mode, uid: p.delete.preview.uid, asset: p.delete.preview.asset,
           start: p.delete.preview.start, length: p.delete.preview.length } },
@@ -1201,6 +1273,7 @@
       const fresh = newProject();
       S.project.pack = fresh.pack;
       S.project.delete = fresh.delete;
+      S.project.entries.forEach(e => { delete e.tags; });
       applyTemplate(true);
       renderMeta(); renderEntries(); changed();
       toast('메타데이터를 모두 지웠습니다.');
