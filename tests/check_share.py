@@ -2,7 +2,8 @@
 
     python tests/check_share.py           (uses output/Osu!Mania MPC v*.zip; the window opens on a hidden desktop)
 Checks: it starts, finds ffmpeg.exe and the calculator next to/inside itself, the window connects,
-an estimate comes back, and a small export lands in the packs folder beside the exe.
+an estimate comes back, a pack saves beside the exe, and a small export lands in the packs folder beside the exe.
+A copy of the program the owner has open is left alone: only the copy started here is closed at the end.
 """
 import glob
 import json
@@ -34,9 +35,6 @@ def call(path, data=None):
 
 
 def main():
-    running = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq Osu!Mania MPC.exe'], capture_output=True, text=True)
-    if 'Osu!Mania MPC.exe' in running.stdout:        # this test ends by closing every copy of the program
-        sys.exit('Osu!Mania MPC is running. Close it first: this check would close it.')
     zips = glob.glob(os.path.join(ROOT, 'output', 'Osu!Mania MPC v*.zip'))
     check('one share zip in output', len(zips) == 1, zips)
     if len(zips) != 1:
@@ -71,9 +69,20 @@ def main():
         check('starts empty for a new user', state['project'] == {}, state['project'])
         check('exports go beside the exe', os.path.normcase(state['packsDir']) == os.path.normcase(os.path.join(folder, 'packs')),
               state['packsDir'])
+        check('this build has the rebuild part', b'view-edit' in urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
+            BASE + '/', timeout=30).read() and b'M.edit = ' in urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
+            BASE + '/edit.js', timeout=30).read())
         row = call('/api/search?q=&keys=4')['rows'][5]
         rating = call('/api/rating?md5=%s&rate=1.1' % row['md5'])['rating']
         check('difficulty estimate works', bool(rating and rating['msd']), rating)
+        saved = call('/api/save', json.dumps({'name': 'share test', 'project': {'pack': {'title': 'Share Test'}, 'entries': [
+            {'uid': 'a', 'md5': row['md5'], 'rate': 1.1}, {'uid': 'b', 'md5': 'f' * 32, 'rate': 1.0}]}}).encode())
+        listed = call('/api/saves')
+        back = call('/api/save/load', json.dumps({'name': 'share test'}).encode())
+        check('a pack saves into the save folder beside the exe and loads back, naming the map that is not here',
+              saved.get('ok') and os.path.isfile(os.path.join(folder, 'save', 'share test.mpcpack'))
+              and [s['name'] for s in listed['saves']] == ['share test'] and back.get('ok') and back.get('missing') == ['f' * 32],
+              (saved, listed, back.get('missing')))
         body = {'pack': {'title': 'Share Test', 'creator': 'F', 'tags': 'x'}, 'dest': 'packs',
                 'entries': [{'uid': 'a', 'md5': row['md5'], 'rate': 1.1, 'followPitch': False, 'version': 'A'}],
                 'delete': {'enabled': True, 'preview': {'mode': 'none'}}}
@@ -93,7 +102,11 @@ def main():
         log = ''.join(open(p, encoding='utf-8').read() for p in glob.glob(os.path.join(work, 'data', 'logs', '*.log')))
         check('the window connected', 'window connected' in log, log[-300:])
     finally:
-        subprocess.run(['taskkill', '/IM', 'Osu!Mania MPC.exe', '/F'], capture_output=True)
+        # only the copy started from the unzipped folder: the owner may have the program open
+        subprocess.run(['powershell', '-NoProfile', '-Command',
+                        "Get-CimInstance Win32_Process -Filter \"name='Osu!Mania MPC.exe'\" | Where-Object { $_.ExecutablePath -like '*"
+                        + os.path.basename(work) + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"],
+                       capture_output=True)
         subprocess.run(['powershell', '-NoProfile', '-Command',
                         "Get-CimInstance Win32_Process -Filter \"name='msedge.exe'\" | Where-Object { $_.CommandLine -like '*"
                         + os.path.basename(work) + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"],

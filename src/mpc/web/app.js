@@ -10,12 +10,12 @@
     JackSpeed: '잭스피드', Chordjack: '코드잭', Technical: '테크니컬' };
   const MODE_KO = { copy: '원본 mp3 그대로', convert: 'mp3로 변환', resample: '배속, 피치 변경', stretch: '배속, 피치 유지',
     keep: '원본 오디오 그대로' };
-  const VIEWS = ['pick', 'pack', 'thumb', 'meta', 'rate'];
+  const VIEWS = ['pick', 'pack', 'thumb', 'meta', 'rate', 'edit'];
   const NOTICE_MAX = 80;
 
   const S = { app: {}, lib: {}, tools: {}, settings: {}, packsDir: '', project: null,
     cur: null, rows: [], total: 0, query: '', keys: 0, loadingRows: false, view: 'pick',
-    follow: true, liveSeen: {} };
+    follow: true, liveSeen: {}, missing: new Set(), replace: null };
 
   // ------------------------------------------------------------ server
   async function api(path, body, raw) {
@@ -84,7 +84,7 @@
 
   function newProject() {
     return {
-      v: 2, rc: newRc(),
+      v: 2, rc: newRc(), edit: null, saveName: '',
       pack: { title: '', artist: 'Various Artists', creator: S.lib.player || '', source: '', tags: '', resetIds: true,
         od: '', hp: '', template: '{title} [{rate}x] ({creator})' },
       entries: [],
@@ -116,6 +116,8 @@
     p.rc.naming = Object.assign(newRc().naming, saved.rc && saved.rc.naming);
     p.rc.rates = Array.isArray(p.rc.rates) ? p.rc.rates : [];
     p.rc.rules = Array.isArray(p.rc.rules) ? p.rc.rules : [];
+    p.edit = saved.edit && typeof saved.edit === 'object' && Array.isArray(saved.edit.slots) ? saved.edit : null;
+    p.saveName = typeof saved.saveName === 'string' ? saved.saveName : '';
     return p;
   }
 
@@ -130,7 +132,7 @@
   /* Whether there is anything in the project worth asking about on the next start. */
   function hasWork(p) {
     return !!(p && (p.entries.length || p.pack.title.trim() || p.pack.tags.trim() || p.pack.source.trim()
-      || p.thumb.layers.length || (p.rc && p.rc.rates.length)));
+      || p.thumb.layers.length || p.edit || (p.rc && p.rc.rates.length)));
   }
 
   let saveTimer = 0;
@@ -146,13 +148,49 @@
     }, 700);
   }
 
-  /* Throw the current project away (a copy stays on disk as project.backup.json) and start empty. */
-  async function startOver() {
+  /* Put another project in place of the current one (a copy of the old one stays on disk as
+     project.backup.json). keepRc: the rate changer is not part of a pack and carries on as it was. */
+  async function setProject(project, view, keepRc) {
     try { await api('/api/project/backup', {}); } catch (e) { /* nothing saved yet */ }
-    S.project = newProject();
-    S.cur = null; $('map').hidden = true; $('stageEmpty').hidden = false; stopAudio();
+    const rc = S.project && S.project.rc;
+    S.project = project;
+    if (keepRc && rc) S.project.rc = rc;
+    S.cur = null; S.replace = null; $('map').hidden = true; $('stageEmpty').hidden = false; stopAudio();
     Thumb.reset();
-    renderEntries(); show('pick'); changed();
+    addLabel(); renderEntries(); show(view || 'pick'); changed();
+    return checkMissing();
+  }
+
+  /* Throw the current project away and start empty. */
+  const startOver = () => setProject(newProject(), 'pick');
+
+  /* Which of the pack's maps this osu! folder does not have (a saved pack opened on another PC, a map
+     deleted since). They are marked in the lists and block the export. */
+  async function checkMissing() {
+    const md5s = S.project.entries.map(e => e.md5);
+    let res = null;
+    if (md5s.length) { try { res = await api('/api/check', { md5s }); } catch (e) { return null; } }
+    if (res && !res.ready) return null;                 // the map list is still being read
+    S.missing = new Set(res ? res.missing : []);
+    renderEntries();
+    if (S.view === 'meta') renderDiffList();
+    return S.project.entries.filter(e => S.missing.has(e.md5));
+  }
+
+  /* The label of the add button and the "replace" banner follow what the next click will do. */
+  function addLabel() {
+    const c = S.cur, r = S.replace;
+    $('addBtn').textContent = c && c.editUid ? '변경 저장' : r ? '이 자리에 넣기' : '팩에 넣기';
+    $('cancelEdit').hidden = !(c && c.editUid);
+    $('replaceBar').hidden = !r;
+    if (r) $('replaceText').textContent = '"' + r.label + '" (BeatmapID ' + r.slot + ') 자리에 넣을 맵을 고르고 배속을 정한 뒤 "이 자리에 넣기"를 누르세요. 이 난이도의 ID와 링크를 그대로 물려받습니다.';
+  }
+
+  /* Shown in the header while an uploaded set is being rebuilt, so it is clear what the pack tabs work on. */
+  function editChip() {
+    const e = S.project.edit, chip = $('editChip');
+    chip.hidden = !e;
+    if (e) chip.textContent = '수정 중  ' + (e.title || e.folder) + '  ID ' + e.setId;
   }
 
   /* On start: carry on with the pack that was being made, or begin a new one. */
@@ -208,15 +246,19 @@
     S.view = view;
     for (const v of VIEWS) $('view-' + v).hidden = v !== view;
     document.querySelectorAll('.steps button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === view)));
-    const picking = view === 'pick' || view === 'rate';
+    const picking = view === 'pick' || view === 'rate' || (view === 'edit' && !S.project.edit);
     $('main').classList.toggle('nolib', !picking);
     $('followBar').hidden = !picking;
-    $('exportBtn').hidden = $('newBtn').hidden = view === 'rate';
+    $('exportBtn').hidden = $('newBtn').hidden = $('saveBtn').hidden = $('loadBtn').hidden = view === 'rate';
+    if (view !== 'pick' && S.replace) { S.replace = null; addLabel(); }
+    if (view === 'edit' && MPC.edit) MPC.edit.show();
+    editChip();
     if (view === 'thumb') Thumb.refresh();
     if (view === 'meta') renderMeta();
     if (view === 'pack' && MPC.pack) MPC.pack.render();
     if (view === 'rate' && MPC.rate) MPC.rate.show();
     if (view !== 'pick') stopAudio();
+    if (view !== 'meta') stopDeletePreview();
   }
 
   function setLib(open, save) {
@@ -268,6 +310,7 @@
       select.value = String(S.keys);
       if (!S.project.pack.creator && S.lib.player) { S.project.pack.creator = S.lib.player; }
       search(true);
+      checkMissing().then(list => { if (list && list.length && MPC.saves) MPC.saves.reportMissing(list, '이전에 작업하던 팩'); });
     }
   }
 
@@ -341,13 +384,15 @@
   async function pollLive() {
     try {
       const view = S.view;
-      if (S.follow && (view === 'pick' || view === 'rate') && !document.querySelector('dialog[open]')) {
+      const choosing = view === 'edit' && !S.project.edit;
+      if (S.follow && (view === 'pick' || view === 'rate' || choosing) && !document.querySelector('dialog[open]')) {
         const st = await api('/api/live');
         renderLive(st);
         const md5 = st.known ? st.md5 : null;
         if (md5 !== S.liveSeen[view]) {              // each part follows on its own
           S.liveSeen[view] = md5;
           if (view === 'rate') { if (md5 && MPC.rate && MPC.rate.md5() !== md5) MPC.rate.select(md5); }
+          else if (view === 'edit') { if (md5 && MPC.edit) MPC.edit.select(md5); }
           else if (md5 && !(S.cur && S.cur.editUid) && !(S.cur && S.cur.md5 === md5)) selectMap(md5);
         }
       }
@@ -376,6 +421,7 @@
 
   async function selectMap(md5, edit) {
     if (S.view === 'rate' && !edit) { if (MPC.rate) MPC.rate.select(md5); return; }
+    if (S.view === 'edit' && !edit) { if (MPC.edit && !S.project.edit) MPC.edit.select(md5); return; }
     stopAudio();
     let detail;
     try { detail = await api('/api/map?md5=' + md5); } catch (e) { detail = null; }
@@ -394,8 +440,7 @@
     $('mKeys').textContent = detail.keys + 'K';
     $('mNotes').textContent = detail.notes.toLocaleString() + (detail.lns ? '  LN ' + Math.round(detail.lns / detail.notes * 100) + '%' : '');
     $('followPitch').checked = S.cur.follow;
-    $('addBtn').textContent = edit ? '변경 저장' : '팩에 넣기';
-    $('cancelEdit').hidden = !edit;
+    addLabel();
     $('playBtn').hidden = !detail.hasAudio;
     $('addBtn').disabled = !detail.hasAudio;
     $('addNote').textContent = detail.hasAudio ? '' : '오디오 파일이 없어 팩에 넣을 수 없습니다.';
@@ -467,6 +512,53 @@
     }
   }
 
+  // ---- volume: one setting for every preview in the program (half by default)
+  function setVolume(value, save) {
+    const v = clamp(Math.round(Number(value)), 0, 100);
+    S.settings.volume = v;
+    $('player').volume = $('player2').volume = v / 100;
+    document.querySelectorAll('input.volume').forEach(i => { i.value = v; i.nextElementSibling.textContent = v; });
+    if (save) api('/api/settings', { volume: v }).catch(() => {});
+  }
+
+  // ---- the [delete] preview music, as it will sound inside the placeholder audio
+  function stopDeletePreview() {
+    const a = $('player2');
+    a.pause();
+    $('dPrevPlay').textContent = '미리 들어 보기';
+  }
+
+  async function toggleDeletePreview() {
+    const a = $('player2'), d = S.project.delete.preview;
+    if (!a.paused) { stopDeletePreview(); return; }
+    stopAudio();
+    let src = '', start = 0;
+    if (d.mode === 'entry') {
+      const e = S.project.entries.find(x => x.uid === d.uid) || S.project.entries[0];
+      if (!e) { toast('팩에 넣은 맵이 없습니다.'); return; }
+      src = '/api/audio?md5=' + e.md5 + '&t=' + q(TOKEN);
+      let detail = null;
+      try { detail = await api('/api/map?md5=' + e.md5); } catch (err) { /* plays from 40% in */ }
+      start = detail && detail.preview >= 0 ? detail.preview / 1000 : -1;       // the map's own preview point
+    } else if (d.mode === 'file') {
+      if (!d.asset) { toast('먼저 음악 파일을 골라 주세요.'); return; }
+      src = '/api/asset?id=' + q(d.asset) + '&t=' + q(TOKEN);
+      start = Math.max(0, Number(d.start) || 0);
+    } else return;
+    const length = clamp(Number(d.length) || 30, 5, 120);
+    a.src = src;
+    a.playbackRate = 1;
+    a.onloadedmetadata = () => {
+      const at = start < 0 ? a.duration * 0.4 : Math.min(start, Math.max(0, a.duration - 1));
+      try { a.currentTime = at; } catch (err) { /* not seekable */ }
+      a.dataset.end = String(at + length);
+    };
+    a.ontimeupdate = () => { if (a.dataset.end && a.currentTime >= Number(a.dataset.end)) stopDeletePreview(); };
+    a.onended = stopDeletePreview;
+    try { await a.play(); $('dPrevPlay').textContent = '정지'; }
+    catch (err) { toast('이 음악은 여기서 재생할 수 없습니다.'); }
+  }
+
   // ---- audio preview
   function syncAudio() {
     const a = $('player');
@@ -483,6 +575,7 @@
     const a = $('player');
     if (!S.cur) return;
     if (!a.paused) { stopAudio(); return; }
+    stopDeletePreview();
     const src = '/api/audio?md5=' + S.cur.md5 + '&t=' + q(TOKEN);
     if (a.dataset.md5 !== S.cur.md5) {
       a.dataset.md5 = S.cur.md5;
@@ -506,23 +599,37 @@
     const p = S.project;
     p.followPitch = c.follow;
     let entry;
+    const fresh = () => ({ md5: c.md5, rate: c.rate, followPitch: c.follow, version: '', versionEdited: false,
+      meta: metaOf(c.detail), rating: c.rating, bg: { x: 50, y: 50, zoom: 1 } });
+    const replacing = !c.editUid && S.replace && p.edit ? S.replace : null;
     if (c.editUid) {
       entry = p.entries.find(e => e.uid === c.editUid);
       if (!entry) return;
       Object.assign(entry, { rate: c.rate, followPitch: c.follow, rating: c.rating, meta: metaOf(c.detail) });
+    } else if (replacing) {                         // takes the place (and the online id) of an original difficulty
+      entry = p.entries.find(e => e.slot === replacing.slot);
+      if (entry) {
+        for (const k of ['bgAsset', 'fx', 'symbols', 'layers']) delete entry[k];      // those belonged to the old map
+        Object.assign(entry, fresh());
+      } else {
+        entry = Object.assign({ uid: newUid(), slot: replacing.slot }, fresh());
+        p.entries.push(entry);
+      }
     } else {
-      entry = { uid: 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), md5: c.md5, rate: c.rate,
-        followPitch: c.follow, version: '', versionEdited: false, meta: metaOf(c.detail), rating: c.rating,
-        bg: { x: 50, y: 50, zoom: 1 } };
+      entry = Object.assign({ uid: newUid() }, fresh());
       p.entries.push(entry);
     }
+    if (p.edit && MPC.edit && !c.editUid) MPC.edit.named(entry);    // an original difficulty put back keeps its own name
     applyTemplate(false);
     const wasEdit = !!c.editUid;
     c.editUid = null;
-    $('addBtn').textContent = '팩에 넣기'; $('cancelEdit').hidden = true;
+    S.replace = null;
+    addLabel();
     renderEntries();
     changed();
-    toast(wasEdit ? '바꾼 내용을 저장했습니다.' : entry.meta.title + ' ' + fmtRate(entry.rate) + '× 를 팩에 넣었습니다.');
+    toast(wasEdit ? '바꾼 내용을 저장했습니다.' : replacing ? '"' + replacing.label + '" 자리에 ' + entry.meta.title + ' ' + fmtRate(entry.rate) + '× 를 넣었습니다.'
+      : entry.meta.title + ' ' + fmtRate(entry.rate) + '× 를 팩에 넣었습니다.');
+    if (replacing) show('edit');
     if (!entry.rating || entry.rating.rate !== entry.rate) {       // added before the estimate came back
       try {
         const res = await api('/api/rating?md5=' + entry.md5 + '&rate=' + entry.rate);
@@ -530,6 +637,8 @@
       } catch (e) { /* stays without an estimate */ }
     }
   }
+
+  const newUid = () => 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
   // ------------------------------------------------------------ pack list
   /* The two ladders of one entry. Older saved entries only carry dan/danOther. */
@@ -628,6 +737,9 @@
     const info = outliers();
     const total = p.entries.reduce((s, e) => s + (e.meta.lengthMs || 0) / e.rate, 0);
     $('packSummary').textContent = p.entries.length ? p.entries.length + '개  ' + fmtTime(total) : '';
+    const gone = p.entries.filter(e => S.missing.has(e.md5)).length;
+    $('packMissing').hidden = !gone;
+    if (gone) $('packMissing').textContent = '이 PC의 osu!에 없는 맵이 ' + gone + '개 있습니다 (빨간 글씨). 그 맵은 내보낼 수 없습니다. 맵을 받은 뒤 "맵 목록"의 "목록 새로 읽기"를 누르거나 팩에서 빼 주세요.';
     p.entries.forEach((e, i) => {
       const li = el('li', (S.cur && S.cur.editUid === e.uid ? 'on ' : '') + (info.out.has(e.uid) ? 'out' : ''));
       li.draggable = true;
@@ -636,6 +748,8 @@
       const text = el('span');
       const sub = el('span', 's');
       sub.append(el('span', 'rate', fmtRate(e.rate) + '×'), el('span', null, e.followPitch && e.rate !== 1 ? '피치 변경' : e.rate !== 1 ? '피치 유지' : ''), el('span', null, fmtTime(e.meta.lengthMs / e.rate)));
+      if (S.missing.has(e.md5)) sub.append(el('span', 'missing', 'osu!에 없음'));
+      if (p.edit) sub.append(el('span', 'idtag', e.slot ? 'ID ' + e.slot : '새 난이도'));
       text.className = 'tx';
       text.append(el('span', 't', e.meta.title), el('span', 'v', e.meta.version), sub);
       text.title = e.meta.title + '  [' + e.meta.version + ']';
@@ -669,7 +783,7 @@
       list.append(li);
     });
     renderSpread(info);
-    $('exportBtn').textContent = p.entries.length ? '내보내기 (' + p.entries.length + ')' : '내보내기';
+    $('exportBtn').textContent = '내보내기' + (p.entries.length ? ' (' + p.entries.length + ')' : '');
   }
 
   function moveEntry(from, to) {
@@ -683,7 +797,7 @@
   function removeEntry(uid) {
     const p = S.project;
     p.entries = p.entries.filter(e => e.uid !== uid);
-    if (S.cur && S.cur.editUid === uid) { S.cur.editUid = null; $('addBtn').textContent = '팩에 넣기'; $('cancelEdit').hidden = true; }
+    if (S.cur && S.cur.editUid === uid) { S.cur.editUid = null; addLabel(); }
     applyTemplate(false);
     renderEntries(); changed();
   }
@@ -701,6 +815,10 @@
     const p = S.project, pk = p.pack, d = p.delete;
     $('pTitle').value = pk.title; $('pArtist').value = pk.artist; $('pCreator').value = pk.creator;
     $('pSource').value = pk.source; $('pTags').value = pk.tags; $('pResetIds').checked = pk.resetIds !== false;
+    $('pResetIds').disabled = !!p.edit;
+    $('pResetHint').textContent = p.edit
+      ? '기존 맵셋을 고치는 중이라 이 설정은 쓰지 않습니다. 모든 난이도에 맵셋의 온라인 ID(' + p.edit.setId + ')가 들어가고, 원래 난이도의 자리를 이은 난이도는 그 BeatmapID를 그대로 가집니다.'
+      : '모든 난이도의 BeatmapID를 0, BeatmapSetID를 -1로 바꿉니다. 원본 맵의 온라인 ID가 남아 있으면 업로드할 때 다른 사람의 맵으로 인식되므로, 새로 올리는 팩이라면 켜 두세요.';
     $('pOd').value = pk.od; $('pHp').value = pk.hp; $('pTemplate').value = pk.template;
     $('dEnabled').checked = d.enabled; $('dBody').hidden = !d.enabled;
     $('dName').value = d.name; $('dMinutes').value = d.minutes;
@@ -719,6 +837,7 @@
     $('dPrevFileRow').hidden = d.preview.mode !== 'file';
     $('dPrevName').textContent = d.preview.asset ? d.preview.name || '고른 음악' : '아직 고르지 않았습니다';
     $('dPrevStart').value = d.preview.start || 0;
+    $('dPrevPlayRow').hidden = d.preview.mode === 'none';
     $('dPrevHint').textContent = d.preview.mode === 'none'
       ? '사이트에서 맵팩의 재생 버튼을 눌러도 아무 소리도 나지 않습니다.'
       : 'delete 난이도의 빈 오디오 한가운데에 이 음악이 30초 들어가고, 그 지점이 미리듣기 시작점(PreviewTime)으로 자동 설정됩니다. 전체 길이는 그대로 유지됩니다.';
@@ -739,6 +858,8 @@
       const src = el('div', 'src');
       src.append(el('b', null, e.meta.title), el('span', 'clip', '[' + e.meta.version + ']'), el('span', 'num', fmtRate(e.rate) + '×'),
         el('span', null, e.rating && e.rating.dan ? e.rating.dan.text : ''));
+      if (p.edit) src.append(el('span', 'idtag', e.slot ? 'ID ' + e.slot : '새 난이도'));
+      if (S.missing.has(e.md5)) src.append(el('span', 'missing', 'osu!에 없음'));
       const line = el('div', 'in');
       const input = el('input');
       input.type = 'text'; input.value = e.version || ''; input.spellcheck = false; input.autocomplete = 'off';
@@ -787,7 +908,10 @@
     text('dMinutes', v => { d().minutes = v.trim(); });
     $('dMinutes').addEventListener('change', ev => { const v = clamp(parseFloat(ev.target.value) || 10, 5, 30); d().minutes = v; ev.target.value = v; changed(); });
     document.querySelectorAll('input[name="dThumb"]').forEach(r => r.addEventListener('change', () => { d().thumb.mode = r.value; renderMeta(); changed(); }));
-    document.querySelectorAll('input[name="dPrev"]').forEach(r => r.addEventListener('change', () => { d().preview.mode = r.value; renderMeta(); changed(); }));
+    document.querySelectorAll('input[name="dPrev"]').forEach(r => r.addEventListener('change', () => { stopDeletePreview(); d().preview.mode = r.value; renderMeta(); changed(); }));
+    $('dPrevPlay').addEventListener('click', toggleDeletePreview);
+    $('dPrevEntry').addEventListener('change', stopDeletePreview);
+    $('dEnabled').addEventListener('change', stopDeletePreview);
     $('dThumbEntry').addEventListener('change', ev => { d().thumb.uid = ev.target.value; changed(); });
     $('dPrevEntry').addEventListener('change', ev => { d().preview.uid = ev.target.value; changed(); });
     $('dThumbDesign').addEventListener('change', ev => { d().thumb.design = ev.target.checked; changed(); });
@@ -818,6 +942,9 @@
     if (!p.pack.title.trim()) block('맵팩 이름이 비어 있습니다. 메타데이터에서 적어 주세요.');
     if (!p.pack.creator.trim()) block('제작자(Creator)가 비어 있습니다. 메타데이터에서 적어 주세요.');
     if (!S.tools.ffmpeg) block('ffmpeg.exe가 없습니다. 프로그램과 같은 폴더에 ffmpeg.exe를 넣어 주세요.');
+    const gone = p.entries.filter(e => S.missing.has(e.md5)).length;
+    if (gone) block('이 PC의 osu!에 없는 맵이 ' + gone + '개 있습니다. 맵을 받은 뒤 목록을 새로 읽거나 팩에서 빼 주세요.');
+    if (p.edit && MPC.edit) MPC.edit.problems(block, warn);
     const names = {};
     p.entries.forEach(e => { const k = (e.version || '').trim().toLowerCase(); names[k] = (names[k] || 0) + 1; });
     if (p.delete.enabled) { const k = (p.delete.name || 'delete').trim().toLowerCase(); names[k] = (names[k] || 0) + 1; }
@@ -832,7 +959,7 @@
     if (p.entries.some(e => (e.version || '').length > NOTICE_MAX)) warn('난이도명이 80자를 넘는 맵이 있습니다. osu!에서 잘릴 수 있습니다.');
     if (p.thumb.format === 'png') warn('썸네일이 png입니다. 화질은 좋지만 맵팩 용량이 커져 업로드가 힘들 수 있습니다.');
     if (!p.pack.tags.trim()) warn('태그가 비어 있습니다.');
-    if (!p.delete.enabled) warn('delete 난이도를 넣지 않습니다. 용량이 큰 팩은 업로드가 막힐 수 있습니다.');
+    if (!p.delete.enabled && !p.edit) warn('delete 난이도를 넣지 않습니다. 용량이 큰 팩은 업로드가 막힐 수 있습니다.');
     return list;
   }
 
@@ -842,12 +969,15 @@
     const p = S.project, list = problems();
     exShow('exStart');
     const total = p.entries.reduce((s, e) => s + (e.meta.lengthMs || 0) / e.rate, 0);
-    $('exSummary').textContent = '"' + (p.pack.title.trim() || '이름 없는 팩') + '"  난이도 ' + p.entries.length + '개' + (p.delete.enabled ? ' + delete' : '') + ',  합계 ' + fmtTime(total);
+    $('exSummary').textContent = '"' + (p.pack.title.trim() || '이름 없는 팩') + '"' + (p.edit ? ' 수정본' : '') + '  난이도 ' + p.entries.length + '개' + (p.delete.enabled ? ' + delete' : '') + ',  합계 ' + fmtTime(total);
+    $('exportTitle').textContent = p.edit ? '수정본 내보내기' : '내보내기';
     const host = $('exProblems');
     host.textContent = '';
     list.forEach(item => host.append(el('li', item.block ? 'block' : '', item.text)));
     $('exGo').disabled = list.some(i => i.block);
-    $('exGuide').hidden = !p.delete.enabled;
+    $('exGuide').hidden = !p.delete.enabled || !!p.edit;
+    $('exGuideEdit').hidden = !p.edit;
+    $('exDestBox').hidden = !!p.edit;
     $('destPacks').textContent = S.packsDir;
     $('destSongs').textContent = S.lib.songs || '';
     document.querySelectorAll('input[name="dest"]').forEach(r => { r.checked = r.value === (S.settings.dest || 'packs'); r.disabled = r.value === 'songs' && !S.lib.songs; });
@@ -858,18 +988,24 @@
 
   async function startExport() {
     const p = S.project;
-    S.settings.dest = (document.querySelector('input[name="dest"]:checked') || {}).value || 'packs';
+    if (!p.edit) S.settings.dest = (document.querySelector('input[name="dest"]:checked') || {}).value || 'packs';
     S.settings.bitrate = Number($('exBitrate').value);
     S.settings.osz = $('exOsz').checked;
     api('/api/settings', S.settings).catch(() => {});
     const payload = {
       pack: p.pack, bitrate: S.settings.bitrate, imageFormat: p.thumb.format, osz: S.settings.osz, dest: S.settings.dest,
-      entries: p.entries.map(e => ({ uid: e.uid, md5: e.md5, rate: e.rate, followPitch: !!e.followPitch, version: (e.version || '').trim() })),
+      entries: p.entries.map(e => ({ uid: e.uid, md5: e.md5, rate: e.rate, followPitch: !!e.followPitch, version: (e.version || '').trim(),
+        slot: p.edit ? e.slot || 0 : 0 })),
       delete: { enabled: p.delete.enabled, name: p.delete.name, minutes: p.delete.minutes,
         preview: { mode: p.delete.preview.mode, uid: p.delete.preview.uid, asset: p.delete.preview.asset,
           start: p.delete.preview.start, length: p.delete.preview.length } },
     };
-    $('exportTitle').textContent = '내보내기';
+    if (p.edit) {
+      payload.mode = 'edit';
+      payload.edit = { folder: p.edit.folder, setId: p.edit.setId, thumbs: p.edit.thumbs !== false, unify: !!p.edit.unify,
+        deleteSlot: p.delete.enabled ? p.edit.deleteSlot || 0 : 0, carry: p.edit.carry || [] };
+    }
+    $('exportTitle').textContent = p.edit ? '수정본 내보내기' : '내보내기';
     await runExport(payload, plan => {
       const jobs = plan.images.slice();
       if (plan.deleteImage) jobs.push({ uid: 'delete', name: plan.deleteImage });
@@ -937,10 +1073,13 @@
     const size = (st.size / 1048576).toFixed(1) + ' MB';
     $('exDoneLead').textContent = st.mode === 'rate'
       ? '배속 난이도 ' + st.items.length + '개를 만들었습니다.  ' + size + (st.inPlace ? '   osu! 곡 선택 화면에서 F5를 누르면 보입니다.' : '')
-      : '내보내기를 마쳤습니다.  ' + size;
+      : st.mode === 'edit' ? '수정본을 만들었습니다.  ' + size + '   원본 폴더는 건드리지 않았습니다.'
+        : '내보내기를 마쳤습니다.  ' + size;
+    $('exDoneEdit').hidden = st.mode !== 'edit';
+    if (st.mode === 'edit' && MPC.edit) MPC.edit.report(st);
     $('exFolder').textContent = st.folder + (st.osz ? '\n' + st.osz : '');
     $('exFolder').style.whiteSpace = 'pre-line';
-    document.querySelector('#exDone .guide-note').hidden = !st.delete;
+    $('exDoneGuide').hidden = !st.delete || st.mode === 'edit';
     const body = $('exReport');
     body.textContent = '';
     let worst = 0, stretched = 0;
@@ -977,6 +1116,17 @@
   function bind() {
     document.querySelectorAll('.steps button').forEach(b => b.addEventListener('click', () => show(b.dataset.view)));
     $('libToggle').addEventListener('click', () => setLib(!S.settings.libOpen, true));
+    // The page itself never scrolls (only the columns inside it do): if anything moves it, put it back.
+    const pin = () => {
+      if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+      for (const node of [document.body, $('main'), document.querySelector('.views')]) {
+        if (node.scrollTop) node.scrollTop = 0;
+        if (node.scrollLeft) node.scrollLeft = 0;
+      }
+    };
+    window.addEventListener('scroll', pin, { passive: true });
+    document.addEventListener('focusin', () => requestAnimationFrame(pin));
+    window.addEventListener('resize', pin);
     bindTips();
     let qTimer = 0;
     $('q').addEventListener('input', ev => { clearTimeout(qTimer); qTimer = setTimeout(() => { S.query = ev.target.value; search(true); }, 160); });
@@ -1011,12 +1161,17 @@
     $('rateReset').addEventListener('click', () => setRate(1));
     $('followPitch').addEventListener('change', ev => { if (!S.cur) return; S.cur.follow = ev.target.checked; renderPitchHint(); syncAudio(); });
     $('playBtn').addEventListener('click', toggleAudio);
+    document.querySelectorAll('input.volume').forEach(i => {
+      i.addEventListener('input', () => setVolume(i.value, false));
+      i.addEventListener('change', () => setVolume(i.value, true));
+    });
     $('player').addEventListener('ended', stopAudio);
     $('addBtn').addEventListener('click', addOrSave);
     $('cancelEdit').addEventListener('click', () => {
       if (!S.cur) return;
-      S.cur.editUid = null; $('addBtn').textContent = '팩에 넣기'; $('cancelEdit').hidden = true; renderEntries();
+      S.cur.editUid = null; addLabel(); renderEntries();
     });
+    $('replaceCancel').addEventListener('click', () => { S.replace = null; addLabel(); show('edit'); });
     $('follow').addEventListener('change', ev => {
       S.follow = ev.target.checked; S.settings.follow = S.follow; S.liveSeen = {};
       renderLive(null);
@@ -1029,7 +1184,7 @@
     $('exportDlg').addEventListener('cancel', ev => { if (!$('exRun').hidden) ev.preventDefault(); });
     document.querySelectorAll('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
     $('newBtn').addEventListener('click', async () => {
-      if (hasWork(S.project) && !(await confirmBox('지금 만들던 팩 구성(넣은 맵, 썸네일 디자인, 메타데이터)을 모두 비우고 새로 시작할까요? 내보낸 파일은 그대로 남습니다.',
+      if (hasWork(S.project) && !(await confirmBox('지금 만들던 팩 구성(넣은 맵, 썸네일 디자인, 메타데이터)을 모두 비우고 새로 시작할까요? 저장해 둔 팩과 내보낸 파일은 그대로 남습니다. 지금 구성을 남기려면 먼저 "저장"을 눌러 주세요.',
         { danger: true, yes: '모두 비우고 새로 시작' }))) return;
       startOver();
     });
@@ -1037,7 +1192,7 @@
       if (!(await confirmBox('넣은 맵 ' + S.project.entries.length + '개를 모두 뺄까요? 썸네일 디자인과 메타데이터는 그대로 둡니다.',
         { danger: true, yes: '모두 빼기' }))) return;
       S.project.entries = [];
-      if (S.cur) { S.cur.editUid = null; $('addBtn').textContent = '팩에 넣기'; $('cancelEdit').hidden = true; }
+      if (S.cur) { S.cur.editUid = null; addLabel(); }
       renderEntries(); changed();
     });
     $('metaClear').addEventListener('click', async () => {
@@ -1067,10 +1222,13 @@
       pickFiles: accept => pickFile(accept, true),
       symbols: () => (Array.isArray(S.settings.customSymbols) ? S.settings.customSymbols : []),
       saveSymbols: list => { S.settings.customSymbols = list; api('/api/settings', { customSymbols: list }).catch(() => {}); } });
+    setVolume(S.settings.volume == null ? 50 : S.settings.volume, false);
     S.follow = S.settings.follow !== false;
     setLib(!!S.settings.libOpen, false);
     $('follow').checked = S.follow;
     bind();
+    if (MPC.saves) MPC.saves.init();
+    if (MPC.edit) MPC.edit.init();
     renderEntries();
     const wanted = new URLSearchParams(location.hash.slice(1)).get('view');      // #view=pack opens that part
     if (!wanted) await askResume();                  // a link straight to a part carries on without asking
@@ -1085,6 +1243,7 @@
   /* Shared with parts.js (pack overview, rate changer). */
   window.MPC = { S, $, el, api, q, TOKEN, toast, confirmBox, pickFile, upload, changed, fmtRate, fmtTime, fmtBpm, bpmText,
     bgSrc, thumbBox, dansOf, packInfo, danChip, show, selectMap, runExport, renderEntries, applyTemplate, SKILL_KO,
+    newProject, adopt, hasWork, setProject, checkMissing, metaOf, newUid, addLabel, openExport, renderMeta,
     exportTitle: text => { $('exportTitle').textContent = text; } };
 
   boot();

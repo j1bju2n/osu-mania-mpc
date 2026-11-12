@@ -1,16 +1,18 @@
 """Application state and actions, independent of the interface: library, map details, export."""
 import hashlib
+import json
 import logging
 import os
 import re
 import secrets
 import shutil
 import threading
+import time
 import zipfile
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from . import audio, live, osufile, paths
+from . import __version__, audio, live, osufile, paths
 from .calc import DanCalc
 from .osudb import Library, detect_osu_folders
 
@@ -20,6 +22,27 @@ ASSET_TYPES = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
                '.wav': 'audio/wav', '.flac': 'audio/flac', '.m4a': 'audio/mp4'}
 IMAGE_NAME = re.compile(r'^(bg\d{2,3}|delete)\.(jpg|png)$')
 BITRATES = (128, 160, 192, 256, 320)
+ASSET_ID = re.compile(r'^[0-9a-f]{20}\.[a-z0-9]{2,5}$')
+SAVE_EXT = '.mpcpack'
+SKIP_FILES = {'thumbs.db', 'desktop.ini', '.ds_store'}
+# what the upload server accepts inside a set (osu-server-beatmap-submission, BeatmapPackageParser)
+UPLOADABLE = {'.osb', '.mp3', '.ogg', '.wav', '.jpg', '.jpeg', '.png', '.avi', '.flv', '.mp4', '.m4v', '.mpg',
+              '.mov', '.wmv', '.webm', '.mkv'}
+FILENAME_MAX = 150                                     # the server refuses longer .osu file names
+
+
+def _asset_ids(node, out):
+    """Every user file (picture, music) named anywhere inside a project."""
+    if isinstance(node, dict):
+        for value in node.values():
+            _asset_ids(value, out)
+    elif isinstance(node, list):
+        for value in node:
+            _asset_ids(value, out)
+    elif isinstance(node, str):
+        name = node[6:] if node.startswith('asset:') else node
+        if ASSET_ID.match(name):
+            out.add(name)
 
 
 class ExportError(Exception):
@@ -75,7 +98,7 @@ class Core:
         self.calc.close()
 
     def save_settings(self, changes):
-        for key in ('dest', 'bitrate', 'osz', 'osuFolder', 'follow', 'libOpen', 'customSymbols', 'rateDest'):
+        for key in ('dest', 'bitrate', 'osz', 'osuFolder', 'follow', 'libOpen', 'customSymbols', 'rateDest', 'volume'):
             if key in changes:
                 self.settings[key] = changes[key]
         try:
@@ -97,6 +120,7 @@ class Core:
                          'follow': bool(self.settings.get('follow', True)),
                          'libOpen': bool(self.settings.get('libOpen', False)),
                          'rateDest': self.settings.get('rateDest', 'source'),
+                         'volume': self.settings.get('volume', 50),
                          'customSymbols': [s for s in self.settings.get('customSymbols') or [] if isinstance(s, dict)]},
             'packsDir': str(paths.packs_dir()),
             'project': paths.load_json(paths.project_path(), {}),
@@ -210,10 +234,155 @@ class Core:
         return asset
 
     def asset_path(self, asset):
-        if not re.match(r'^[0-9a-f]{20}\.[a-z0-9]{2,5}$', asset or ''):
+        if not ASSET_ID.match(asset or ''):
             return None
         target = paths.assets_dir() / asset
         return str(target) if target.is_file() else None
+
+    def missing(self, md5s):
+        """Which of these maps this osu! folder does not have. None while the list is still being read."""
+        if self.library.status != 'ready':
+            return None
+        return [m for m in md5s if isinstance(m, str) and not self.library.get(m)]
+
+    # ---- saved packs (the `save` folder beside the program)
+
+    @staticmethod
+    def _save_file(name):
+        name = osufile.safe_name(' '.join(str(name or '').split()), 80)
+        return name, paths.saves_dir() / (name + SAVE_EXT)
+
+    def save_list(self):
+        folder = paths.saves_dir()
+        out = []
+        try:
+            files = [p for p in folder.iterdir() if p.is_file() and p.name.lower().endswith(SAVE_EXT)]
+        except OSError:
+            files = []
+        for path in files:
+            row = {'name': path.name[:-len(SAVE_EXT)], 'title': '', 'maps': None, 'edit': False,
+                   'savedAt': int(path.stat().st_mtime * 1000), 'size': path.stat().st_size}
+            try:
+                with zipfile.ZipFile(str(path)) as z:
+                    info = json.loads(z.read('info.json').decode('utf-8'))
+                for key in ('title', 'maps', 'edit', 'savedAt'):
+                    if key in info:
+                        row[key] = info[key]
+            except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+                row['broken'] = True
+            out.append(row)
+        out.sort(key=lambda r: r['savedAt'], reverse=True)
+        return {'folder': str(folder), 'saves': out}
+
+    def save_write(self, name, project):
+        """One file per pack: the project and every picture / music file it uses, so it opens anywhere."""
+        if not isinstance(project, dict) or not isinstance(project.get('entries'), list):
+            return {'ok': False, 'message': '저장할 팩 구성이 없습니다.'}
+        name, target = self._save_file(name)
+        project = dict(project)
+        project.pop('rc', None)                           # the rate changer is not part of a pack
+        project['saveName'] = name
+        assets = set()
+        _asset_ids(project, assets)
+        symbols = [s for s in self.settings.get('customSymbols') or []
+                   if isinstance(s, dict) and s.get('asset') in assets]
+        info = {'name': name, 'title': str((project.get('pack') or {}).get('title') or ''),
+                'maps': len(project['entries']), 'edit': bool(project.get('edit')),
+                'savedAt': int(time.time() * 1000), 'app': __version__}
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = str(target) + '.tmp'
+            with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as z:
+                z.writestr('info.json', json.dumps(info, ensure_ascii=False))
+                z.writestr('project.json', json.dumps(project, ensure_ascii=False))
+                z.writestr('symbols.json', json.dumps(symbols, ensure_ascii=False))
+                for asset in sorted(assets):
+                    path = self.asset_path(asset)
+                    if path:
+                        z.write(path, 'assets/' + asset, compress_type=zipfile.ZIP_STORED)
+            os.replace(tmp, str(target))
+        except OSError as exc:
+            return {'ok': False, 'message': '저장하지 못했습니다: %s' % exc}
+        log.info('pack saved: %d maps, %d files', info['maps'], len(assets))
+        return {'ok': True, 'name': name, 'file': str(target)}
+
+    def save_exists(self, name):
+        return self._save_file(name)[1].is_file()
+
+    def save_read(self, name):
+        name, target = self._save_file(name)
+        try:
+            with zipfile.ZipFile(str(target)) as z:
+                project = json.loads(z.read('project.json').decode('utf-8'))
+                try:
+                    symbols = json.loads(z.read('symbols.json').decode('utf-8'))
+                except (KeyError, ValueError):
+                    symbols = []
+                folder = paths.assets_dir()
+                folder.mkdir(parents=True, exist_ok=True)
+                for item in z.infolist():
+                    asset = item.filename[7:] if item.filename.startswith('assets/') else ''
+                    if not ASSET_ID.match(asset) or os.path.splitext(asset)[1] not in ASSET_TYPES:
+                        continue
+                    if item.file_size > 200 << 20 or (folder / asset).is_file():
+                        continue
+                    data = z.read(item)
+                    if hashlib.sha1(data).hexdigest()[:20] != asset[:20]:      # not the file its name says
+                        continue
+                    (folder / asset).write_bytes(data)
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+            return {'ok': False, 'message': '이 저장 파일을 읽지 못했습니다.'}
+        if not isinstance(project, dict) or not isinstance(project.get('entries'), list):
+            return {'ok': False, 'message': '이 저장 파일에는 팩 구성이 없습니다.'}
+        mine = [s for s in self.settings.get('customSymbols') or [] if isinstance(s, dict)]
+        have = {s.get('asset') for s in mine}
+        names = {str(s.get('name') or '').strip().lower() for s in mine}
+        added = False
+        for s in symbols if isinstance(symbols, list) else []:
+            if not isinstance(s, dict) or not ASSET_ID.match(str(s.get('asset') or '')) or s['asset'] in have:
+                continue
+            label = str(s.get('name') or 'symbol').strip()[:40] or 'symbol'
+            base, n = label, 2
+            while label.lower() in names:                 # the same name already means another picture here
+                label = '%s %d' % (base, n)
+                n += 1
+            names.add(label.lower())
+            have.add(s['asset'])
+            mine.append({'asset': s['asset'], 'name': label})
+            added = True
+        if added:
+            self.save_settings({'customSymbols': mine})
+        project['saveName'] = name
+        entries = [e for e in project['entries'] if isinstance(e, dict)]
+        return {'ok': True, 'name': name, 'project': project, 'symbols': mine,
+                'missing': self.missing([str(e.get('md5') or '') for e in entries])}
+
+    def save_delete(self, name):
+        target = self._save_file(name)[1]
+        try:
+            target.unlink()
+            return True
+        except OSError:
+            return False
+
+    # ---- an uploaded set, read for rebuilding
+
+    def set_detail(self, md5):
+        entry = self.library.get(md5)
+        if not entry:
+            return None
+        folder = os.path.dirname(entry['path'])
+        try:
+            found = scan_set(folder)
+        except OSError:
+            return None
+        self.library.include(folder)                       # every difficulty of it can now be opened by md5
+        self._info.clear()
+        found.pop('path')                                  # full paths stay on this side (they end up in save files)
+        found.pop('media')
+        for slot in found['slots']:
+            slot.pop('path')
+        return found
 
     # ---- export
 
@@ -221,7 +390,8 @@ class Core:
         with self._lock:
             if self.job and self.job.state == 'running':
                 raise ExportError('이미 내보내는 중입니다.')
-            self.job = RateJob(self, project) if project.get('mode') == 'rate' else ExportJob(self, project)
+            kind = {'rate': RateJob, 'edit': EditJob}.get(project.get('mode'), ExportJob)
+            self.job = kind(self, project)
             return self.job.describe()
 
     def export_image(self, job_id, name, data):
@@ -255,6 +425,9 @@ class Core:
         elif what == 'packs':
             target = str(paths.packs_dir())
             os.makedirs(target, exist_ok=True)
+        elif what == 'saves':
+            target = str(paths.saves_dir())
+            os.makedirs(target, exist_ok=True)
         elif what == 'songs' and self.library.songs:
             target = str(self.library.songs)
         else:
@@ -264,6 +437,49 @@ class Core:
             return True
         except OSError:
             return False
+
+
+def scan_set(folder):
+    """Every difficulty file of one song folder, with what an update of the uploaded set needs to know."""
+    slots, audios, media = [], set(), set()
+    for name in sorted(os.listdir(folder), key=str.lower):
+        if not name.lower().endswith('.osu'):
+            continue
+        path = os.path.join(folder, name)
+        try:
+            with open(path, 'rb') as f:
+                raw = f.read()
+            info = osufile.info_from_text(osufile.decode(raw))
+        except (OSError, ValueError):
+            continue
+        audio_file = osufile.audio_path(path, info['audio'])
+        background = osufile.background_path(path, info['background'])
+        span = info['last_ms'] - info['first_ms']
+        kind = 'other' if info['mode'] != 3 else 'delete' if info['notes'] <= 2 and span >= 240000 else 'map'
+        for used in (info['audio'], info['background']):
+            if used:
+                media.add(used.replace('\\', '/').lower())
+        if info['audio']:
+            audios.add(info['audio'].lower())
+        slots.append({
+            'file': name, 'md5': hashlib.md5(raw).hexdigest(), 'id': max(0, info['beatmap_id']),
+            'setId': info['set_id'], 'kind': kind, 'mode': info['mode'], 'keys': info['keys'],
+            'version': info['version'], 'title': info['title'], 'titleU': info['title_u'],
+            'artist': info['artist'], 'artistU': info['artist_u'], 'creator': info['creator'],
+            'source': info['source'], 'tags': info['tags'], 'audio': info['audio'],
+            'hasAudio': bool(audio_file), 'hasBg': bool(background), 'lengthMs': info['last_ms'],
+            'notes': info['notes'], 'format': info['format'], 'path': path,
+        })
+    ids = Counter(s['setId'] for s in slots if s['setId'] > 0)
+    others = 0
+    for base, _dirs, files in os.walk(folder):
+        for name in files:
+            rel = os.path.relpath(os.path.join(base, name), folder).replace('\\', '/').lower()
+            if not rel.endswith('.osu') and rel not in media and name.lower() not in SKIP_FILES:
+                others += 1
+    return {'folder': os.path.basename(folder), 'path': folder, 'setId': ids.most_common(1)[0][0] if ids else -1,
+            'mixedIds': len(ids) > 1, 'audios': len(audios), 'others': others, 'media': sorted(media),
+            'slots': slots}
 
 
 def _unique_folder(root, name):
@@ -501,7 +717,7 @@ class ExportJob:
         m = self.meta
         stem = '%s - %s (%s) [' % (osufile.safe_name(m['Artist'], 60, False), osufile.safe_name(m['Title'], 80, False),
                                    osufile.safe_name(m['Creator'], 40, False))
-        room = max(20, 235 - len(self.folder) - len(stem))
+        room = max(20, min(235 - len(self.folder), FILENAME_MAX) - len(stem) - 5)
         return stem + osufile.safe_name(version, room, False) + '].osu'
 
     def _write(self, name, text):
@@ -537,14 +753,21 @@ class ExportJob:
         start = d['start']
         if d['clip'] and start < 0:                       # the map had no preview point: a little way in
             start = self.runner.probe(d['clip'])['duration'] * 0.4
-        self.created.append(os.path.join(self.folder, 'delete.mp3'))
-        preview = audio.render_delete_audio(self.runner, os.path.join(self.folder, 'delete.mp3'), seconds,
+        sound = d.get('audio') or 'delete.mp3'
+        self.created.append(os.path.join(self.folder, sound))
+        preview = audio.render_delete_audio(self.runner, os.path.join(self.folder, sound), seconds,
                                             d['clip'], start, d['length'])
         keys = Counter(e['info']['keys'] for e in self.entries).most_common(1)[0][0]
-        text = osufile.delete_difficulty(dict(self.meta, Version=d['name']), 'delete.mp3',
+        text = osufile.delete_difficulty(dict(self.meta, Version=d['name']), sound,
                                          d['image'] if d['image'] in self.images else '', keys,
-                                         int(d['minutes'] * 60000) + 1000, preview)
-        self._write(self._chart_name(d['name']), text)
+                                         int(d['minutes'] * 60000) + 1000, preview, ids=d.get('ids'))
+        name = self._chart_name(d['name'])
+        taken = {n.lower() for n in os.listdir(self.folder)}
+        n = 2
+        while name.lower() in taken:
+            name = self._chart_name('%s %d' % (d['name'], n))
+            n += 1
+        self._write(name, text)
         self.done += 1
 
     def status(self):
@@ -673,6 +896,195 @@ class RateJob(ExportJob):
         super()._charts()
 
 
+class EditJob(ExportJob):
+    """A set that is already uploaded, rebuilt in a folder of its own. Every difficulty carries the set's
+    online id; one that stands where an original difficulty stood carries that difficulty's id, so the
+    upload updates the set instead of making a new one. The original folder is only read.
+
+    A difficulty left as it was (same file, 1.00x) is copied line for line with its own audio; only its
+    picture, its ids and (when asked) its metadata lines change."""
+    mode = 'edit'
+
+    def _parse(self, project):
+        core = self.core
+        edit = project.get('edit') if isinstance(project.get('edit'), dict) else {}
+        songs = core.library.songs
+        source = osufile.inside_dir(str(songs), str(edit.get('folder') or '')) if songs else None
+        if not source:
+            raise ExportError('원본 맵셋 폴더를 osu! Songs 폴더에서 찾지 못했습니다.')
+        self.src = scan_set(source)
+        self.set_id = self.src['setId']
+        if self.set_id <= 0:
+            raise ExportError('이 맵셋에는 온라인 ID(BeatmapSetID)가 없습니다. 업로드된 적이 없는 맵셋은 새 팩으로 만들어 주세요.')
+        if int(edit.get('setId') or 0) != self.set_id:
+            raise ExportError('불러온 뒤에 원본 맵셋이 바뀌었습니다. "기존 맵팩 수정"에서 다시 불러와 주세요.')
+        core.library.include(source)
+        self.remake = bool(edit.get('thumbs', True))
+        self.unify = bool(edit.get('unify'))
+        super()._parse(dict(project, dest='packs'))
+        self.reset_ids = False
+        self.dest_root = str(paths.packs_dir())
+        online = {s['id']: s for s in self.src['slots'] if s['id'] > 0}
+        taken = set()
+
+        def claim(value, what):
+            try:
+                slot = int(value or 0)
+            except (TypeError, ValueError):
+                slot = 0
+            if slot and slot not in online:
+                raise ExportError('%s: 이 맵셋에 없는 BeatmapID(%d)입니다. 다시 불러와 주세요.' % (what, slot))
+            if slot in taken:
+                raise ExportError('%s: 같은 BeatmapID(%d)를 두 난이도가 쓰려고 합니다.' % (what, slot))
+            if slot:
+                taken.add(slot)
+            return slot
+
+        home = os.path.normcase(os.path.realpath(source))
+        for e, raw in zip(self.entries, project.get('entries') or []):
+            e['beatmap_id'] = claim(raw.get('slot'), e['version'])
+            inside = os.path.normcase(os.path.realpath(os.path.dirname(e['path']))) == home
+            e['asis'] = inside and abs(e['rate'] - 1.0) < 1e-9
+        if self.delete:
+            self.delete['ids'] = (claim(edit.get('deleteSlot'), self.delete['name']), self.set_id)
+        wanted = {str(n).lower() for n in edit.get('carry') or []}
+        self.carry = [s for s in self.src['slots'] if s['kind'] == 'other' and s['file'].lower() in wanted]
+        for s in self.carry:
+            if s['id']:
+                taken.add(s['id'])
+        self.removed = [s for s in self.src['slots'] if s['id'] > 0 and s['id'] not in taken]
+
+    def _open_folder(self):
+        os.makedirs(self.dest_root, exist_ok=True)
+        name = self.src['folder']
+        lead = re.match(r'^(\d+)', name)
+        if not lead or int(lead.group(1)) != self.set_id:  # osu! reads leading digits of the folder as the set id
+            name = '%d %s - %s' % (self.set_id, self.meta['Artist'], self.meta['Title'])
+        self.folder = _unique_folder(self.dest_root, osufile.safe_name(name))
+        os.makedirs(self.folder)
+        source = self.src['path']
+        self.skipped = 0
+        self.copies = {}                                  # name inside the set -> file to copy as it is
+
+        def keep(path):
+            if path:
+                self.copies[os.path.relpath(os.path.realpath(path), os.path.realpath(source))] = path
+
+        for e in self.entries:
+            if not e['asis']:
+                continue
+            e['keep_audio'] = True
+            e['audio'] = e['info']['audio']
+            e['status'] = 'done'
+            e['report'] = {'mode': 'keep', 'trimmed': False, 'shift_ms': None, 'spread_ms': None, 'residual_ms': None}
+            keep(e['source'])
+            if not self.remake:
+                e['image'] = ''                           # its own picture stays
+                keep(osufile.background_path(e['path'], e['info']['background']))
+        for s in self.carry:
+            keep(osufile.audio_path(s['path']))
+            keep(osufile.background_path(s['path']))
+        media = set(self.src['media'])
+        for base, _dirs, files in os.walk(source):        # hitsounds, storyboard files and the like
+            for name in files:
+                path = os.path.join(base, name)
+                rel = os.path.relpath(path, source)
+                if (name.lower().endswith('.osu') or name.lower() in SKIP_FILES
+                        or rel.replace('\\', '/').lower() in media):
+                    continue
+                if os.path.splitext(name)[1].lower() not in UPLOADABLE:
+                    self.skipped += 1                     # the upload would be refused with it inside
+                    continue
+                self.copies[rel] = path
+        used = {rel.replace('\\', '/').lower() for rel in self.copies}
+
+        def free(name):
+            stem, ext = os.path.splitext(name)
+            candidate, n = name, 2
+            while candidate.lower() in used:
+                candidate = '%s_%d%s' % (stem, n, ext)
+                n += 1
+            used.add(candidate.lower())
+            return candidate
+
+        for e in self.entries:
+            if e['image']:
+                e['image'] = free(e['image'])
+            if not e['asis']:
+                e['audio_name'] = free('audio%02d.mp3' % (e['index'] + 1))
+        self.allowed = {e['image'] for e in self.entries if e['image']}
+        if self.delete:
+            self.delete['image'] = free(self.delete['image'])
+            self.delete['audio'] = free('delete.mp3')
+            self.allowed.add(self.delete['image'])
+
+    def _audio(self):
+        self.step = '원본 파일을 복사하는 중'
+        for rel, path in self.copies.items():
+            target = os.path.join(self.folder, rel)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            self.created.append(target)
+            shutil.copyfile(path, target)
+        super()._audio()
+
+    def _charts(self):
+        self.step = '난이도 파일을 쓰는 중'
+        names = {n.lower() for n in os.listdir(self.folder)}
+        # osu! and the server find an online difficulty by its file name: a name that belonged to one
+        # BeatmapID must not turn up under another
+        reserved = {s['file'].lower(): s['id'] for s in self.src['slots'] if s['id'] > 0}
+
+        def free(name, again, own=0):
+            n = 2
+            while name.lower() in names or reserved.get(name.lower(), own) != own:
+                name = again(n)
+                n += 1
+            names.add(name.lower())
+            return name
+
+        for e in self.entries:
+            ids = (e['beatmap_id'], self.set_id)
+            if e['asis']:
+                picture = e['image'] if e['image'] and e['image'] in self.images else None
+                if e['image'] and not picture:            # no new picture arrived: its own one is needed
+                    original = osufile.background_path(e['path'], e['info']['background'])
+                    if original:
+                        target = os.path.join(self.folder, os.path.relpath(
+                            os.path.realpath(original), os.path.realpath(self.src['path'])))
+                        if not os.path.exists(target):
+                            os.makedirs(os.path.dirname(target), exist_ok=True)
+                            self.created.append(target)
+                            shutil.copyfile(original, target)
+                text = osufile.patch(osufile.read(e['path']), background_name=picture,
+                                     meta=self._chart_meta(e) if self.unify else {'Version': e['version']},
+                                     od=self.od if self.unify else None, hp=self.hp if self.unify else None, ids=ids)
+                stem = os.path.splitext(os.path.basename(e['path']))[0]
+                name = free(stem + '.osu', lambda n: '%s %d.osu' % (stem, n), e['beatmap_id'])
+            else:
+                text = osufile.transform(osufile.read(e['path']), rate=e['rate'], audio_name=e['audio'],
+                                         background_name=self._chart_background(e), meta=self._chart_meta(e),
+                                         od=self.od, hp=self.hp, reset_ids=False, ids=ids)
+                name = free(self._chart_name(e['version']), lambda n: self._chart_name('%s %d' % (e['version'], n)),
+                            e['beatmap_id'])
+            self._write(name, text)
+        for s in self.carry:                              # not a mania difficulty: carried over untouched
+            stem = os.path.splitext(s['file'])[0]
+            name = free(s['file'], lambda n: '%s %d.osu' % (stem, n), s['id'])
+            self.created.append(os.path.join(self.folder, name))
+            shutil.copyfile(s['path'], os.path.join(self.folder, name))
+
+    def status(self):
+        out = super().status()
+        rows = [{'version': e['version'], 'id': e['beatmap_id'], 'how': 'asis' if e['asis'] else 'made'}
+                for e in self.entries]
+        if self.delete:
+            rows.append({'version': self.delete['name'], 'id': self.delete['ids'][0], 'how': 'delete'})
+        rows += [{'version': s['version'], 'id': s['id'], 'how': 'carry'} for s in self.carry]
+        out['edit'] = {'setId': self.set_id, 'rows': rows, 'copied': len(self.copies), 'skipped': self.skipped,
+                       'removed': [{'version': s['version'], 'id': s['id']} for s in self.removed]}
+        return out
+
+
 def _optional_number(value, low, high):
     if value in (None, ''):
         return None
@@ -685,7 +1097,9 @@ def _optional_number(value, low, high):
 
 def _zip_folder(folder, target):
     with zipfile.ZipFile(target, 'w') as z:
-        for name in sorted(os.listdir(folder)):
-            packed = name.lower().endswith(('.mp3', '.jpg', '.png', '.ogg'))
-            z.write(os.path.join(folder, name), name,
-                    compress_type=zipfile.ZIP_STORED if packed else zipfile.ZIP_DEFLATED)
+        for base, _dirs, files in os.walk(folder):
+            for name in sorted(files):
+                path = os.path.join(base, name)
+                packed = name.lower().endswith(('.mp3', '.jpg', '.jpeg', '.png', '.ogg', '.mp4', '.avi', '.flv'))
+                z.write(path, os.path.relpath(path, folder).replace('\\', '/'),
+                        compress_type=zipfile.ZIP_STORED if packed else zipfile.ZIP_DEFLATED)

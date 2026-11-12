@@ -34,8 +34,20 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
     $exe = Join-Path $stage 'dist\Osu!Mania MPC.exe'
     if (-not (Test-Path -LiteralPath $exe)) { throw 'the exe was not produced' }
-    try { Copy-Item -LiteralPath $exe (Join-Path $out 'Osu!Mania MPC.exe') -Force }
-    catch { throw 'output\Osu!Mania MPC.exe is in use. Close the program, then build again.' }
+    $target = Join-Path $out 'Osu!Mania MPC.exe'
+    $aside = Join-Path $out 'Osu!Mania MPC (previous build, delete me).exe'
+    if (Test-Path -LiteralPath $aside) { Remove-Item -LiteralPath $aside -Force -ErrorAction SilentlyContinue }
+    try { Copy-Item -LiteralPath $exe $target -Force }
+    catch {
+        # The program is open. Windows lets a running exe be renamed, not replaced: the open window carries on
+        # from the renamed file and the new build takes the usual name. The renamed file goes on the next build.
+        try {
+            Move-Item -LiteralPath $target $aside -Force
+            Copy-Item -LiteralPath $exe $target -Force
+            $script:movedAside = $true
+        }
+        catch { throw 'output\Osu!Mania MPC.exe is in use and could not be moved aside. Close the program, then build again.' }
+    }
     # the program was called "Map Pack Create" up to 0.1.1: that build is replaced by this one
     $old = Join-Path $out 'Map Pack Create.exe'
     if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue }
@@ -95,6 +107,10 @@ finally {
     Remove-Item -LiteralPath $share -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+if ($script:movedAside) {
+    'NOTE: the program was running. The open window is still the previous build; it now runs from'
+    '      "Osu!Mania MPC (previous build, delete me).exe". Close it and start "Osu!Mania MPC.exe" for the new one.'
+}
 foreach ($part in @('Osu!Mania MPC.exe', 'ffmpeg.exe', 'README.txt', "Osu!Mania MPC v$version.zip")) {
     $target = Join-Path $out $part
     if (Test-Path -LiteralPath $target) { '{0,12:N0} bytes  {1}' -f (Get-Item -LiteralPath $target).Length, $part }

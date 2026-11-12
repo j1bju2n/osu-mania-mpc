@@ -44,6 +44,12 @@ def packs_dir():
     return Path(override) if override else app_dir() / 'packs'
 
 
+def saves_dir():
+    """Saved packs: a `save` folder beside the program, so they travel with it."""
+    override = os.environ.get('MPC_SAVE_DIR')
+    return Path(override) if override else app_dir() / 'save'
+
+
 def assets_dir():
     return data_dir() / 'assets'
 

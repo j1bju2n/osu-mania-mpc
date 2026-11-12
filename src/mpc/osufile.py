@@ -152,7 +152,7 @@ def info_from_text(text):
         'artist': meta.get('Artist', ''), 'artist_u': meta.get('ArtistUnicode', ''),
         'creator': meta.get('Creator', ''), 'version': meta.get('Version', ''),
         'source': meta.get('Source', ''), 'tags': meta.get('Tags', ''),
-        'set_id': int(_num(meta.get('BeatmapSetID'), -1)),
+        'set_id': int(_num(meta.get('BeatmapSetID'), -1)), 'beatmap_id': int(_num(meta.get('BeatmapID'), 0)),
         'audio': general.get('AudioFilename', ''), 'preview': int(_num(general.get('PreviewTime'), -1)),
         'od': _num(diff.get('OverallDifficulty'), 0), 'hp': _num(diff.get('HPDrainRate'), 0),
         'background': _background_name(by.get('Events', [])),
@@ -178,6 +178,20 @@ def inside(folder, name):
     except ValueError:
         return None
     return target if os.path.isfile(target) else None
+
+
+def inside_dir(root, name):
+    """Absolute path of a folder directly named inside root, only if it really is inside it."""
+    if not name:
+        return None
+    root = os.path.realpath(root)
+    target = os.path.realpath(os.path.join(root, name))
+    try:
+        if os.path.commonpath([root, target]) != root or target == root:
+            return None
+    except ValueError:
+        return None
+    return target if os.path.isdir(target) else None
 
 
 def background_path(osu_path, name=None):
@@ -259,12 +273,62 @@ def _set_keys(lines, values, spaced):
     return out
 
 
+def _swap_background(lines, name):
+    """The background event pointing at `name`; the line is added when the file had none."""
+    out, done = [], False
+    for line in lines:
+        s = line.strip()
+        if not done and s.startswith('0,0,'):
+            rest = s[4:].strip()
+            if rest.startswith('"') and rest.find('"', 1) != -1:
+                tail = rest[rest.find('"', 1) + 1:]
+            else:
+                tail = rest[len(rest.split(',')[0]):]
+            out.append('0,0,"%s"%s' % (name, tail or ',0,0'))
+            done = True
+        else:
+            out.append(line)
+    if not done:
+        at = 1 if out and out[0].strip().startswith('//') else 0
+        out.insert(at, '0,0,"%s",0,0' % name)
+    return out
+
+
+def patch(text, background_name=None, meta=None, od=None, hp=None, ids=None):
+    """The same difficulty with only the named lines changed: notes, timing, storyboard, hitsounds and the
+    audio stay exactly as written. ids: (BeatmapID, BeatmapSetID)."""
+    head, sections = split_sections(text)
+    newline = '\r\n' if '\r\n' in text else '\n'
+    out = list(head)
+    for name, lines in sections:
+        if name == 'Metadata':
+            values = dict(meta or {})
+            if ids:
+                values['BeatmapID'] = str(int(ids[0]))
+                values['BeatmapSetID'] = str(int(ids[1]))
+            if values:
+                lines = _set_keys(lines, values, False)
+        elif name == 'Difficulty' and (od is not None or hp is not None):
+            values = {}
+            if od is not None:
+                values['OverallDifficulty'] = _fmt(float(od))
+            if hp is not None:
+                values['HPDrainRate'] = _fmt(float(hp))
+            lines = _set_keys(lines, values, False)
+        elif name == 'Events' and background_name:
+            lines = _swap_background(lines, background_name)
+        out.append('[%s]' % name)
+        out.extend(lines)
+    return newline.join(out).rstrip('\r\n') + newline
+
+
 def transform(text, rate=1.0, audio_name=None, background_name=None, meta=None, od=None, hp=None,
-              reset_ids=True):
+              reset_ids=True, ids=None):
     """The pack's copy of one difficulty.
 
     rate: every time is divided by it (the audio is processed to match).
     meta: {'Title','TitleUnicode','Artist','ArtistUnicode','Creator','Version','Source','Tags'} overrides.
+    ids: (BeatmapID, BeatmapSetID) to write instead of resetting them (an update of an uploaded set).
     Storyboard and video events are dropped: their files are not part of the pack.
     """
     head, sections = split_sections(text)
@@ -297,7 +361,10 @@ def transform(text, rate=1.0, audio_name=None, background_name=None, meta=None, 
             lines = new
         elif name == 'Metadata':
             values = dict(meta or {})
-            if reset_ids:
+            if ids:
+                values['BeatmapID'] = str(int(ids[0]))
+                values['BeatmapSetID'] = str(int(ids[1]))
+            elif reset_ids:
                 values['BeatmapID'] = '0'
                 values['BeatmapSetID'] = '-1'
             lines = _set_keys(lines, values, False)
@@ -339,9 +406,10 @@ def transform(text, rate=1.0, audio_name=None, background_name=None, meta=None, 
     return '\r\n'.join(out).rstrip('\r\n') + '\r\n'
 
 
-def delete_difficulty(meta, audio_name, background_name, keys, length_ms, preview_ms):
+def delete_difficulty(meta, audio_name, background_name, keys, length_ms, preview_ms, ids=None):
     """The placeholder difficulty that makes the set count as a marathon (first and last note far apart)."""
     keys = keys if 1 <= keys <= 10 else 4
+    beatmap_id, set_id = (int(ids[0]), int(ids[1])) if ids else (0, -1)
     width = 512.0 / keys
     first_x = int(width / 2)
     last_x = int(width * (keys - 0.5))
@@ -356,7 +424,7 @@ def delete_difficulty(meta, audio_name, background_name, keys, length_ms, previe
         'Artist:' + meta.get('Artist', ''), 'ArtistUnicode:' + meta.get('ArtistUnicode', ''),
         'Creator:' + meta.get('Creator', ''), 'Version:' + meta.get('Version', 'delete'),
         'Source:' + meta.get('Source', ''), 'Tags:' + meta.get('Tags', ''),
-        'BeatmapID:0', 'BeatmapSetID:-1', '',
+        'BeatmapID:%d' % beatmap_id, 'BeatmapSetID:%d' % set_id, '',
         '[Difficulty]', 'HPDrainRate:8', 'CircleSize:%d' % keys, 'OverallDifficulty:8', 'ApproachRate:5',
         'SliderMultiplier:1.4', 'SliderTickRate:1', '',
         '[Events]', '//Background and Video events',

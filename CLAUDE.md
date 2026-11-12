@@ -54,6 +54,60 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
   탐색기의 exe 아이콘이 예전 것으로 남는 것은 Windows 아이콘 캐시: `build.ps1`이 빌드 후 SHChangeNotify로 알리고,
   수동으로는 `python tools/shell_icon.py <exe> <out.png> --refresh --all`.
 
+- 0.3.3 (2026-11-12, 오너가 팩을 만들다 찾은 버그):
+  - **화면 전체가 위로 밀려 돌아오지 않던 버그 / 상단 메뉴가 잘리던 버그** (같은 원인). 체크박스·라디오의 숨긴 `input`이
+    `position:absolute`인데 감싸는 요소에 `position`이 없어서 스크롤 칸 밖(문서 기준)에 놓였고, 포커스를 받으면 브라우저가
+    문서 전체를 그쪽으로 스크롤했다(`overflow:hidden`은 사용자의 스크롤만 막는다). → `.check`, `.seg label`에 `position:relative`,
+    페이지 틀(body, main, .views, .view)은 `overflow: clip`, 그래도 움직이면 `app.js`의 `pin()`이 되돌린다.
+    **새 숨김 입력을 만들 때는 반드시 `position:relative`인 라벨 안에 둘 것.**
+  - [delete] 썸네일도 전용 설정을 가진다 (`project.delete.thumb.own` = {fx, symbols, bg}; `currentEntry()`가 delete일 때 이것을 돌려줌).
+    효과 "이 맵만 다르게"와 "심볼 고르기"가 delete 칸에서도 된다. "디자인 적용"을 끈 추가 이미지에도 전용 심볼은 그려진다
+    (`designFor`가 전용 심볼이 있는 레이어만 남김) → "사진 위에 단 심볼만"이 가능.
+  - 맵별 예상 난이도 심볼 레이어가 비어 있는 칸(예상 난이도 없음)은 화면에서만 점선 상자와 안내 글자를 보여 준다.
+
+- 0.4.0 (2026-11-12 오너 요청):
+  - 썸네일 "이 맵만 다르게"를 켜면 효과뿐 아니라 **레이어의 위치·크기·회전도 그 맵에만** 적용된다
+    (`entry.layers[layerId]` = {x,y,w,h,rot,size}; 그릴 때 `placed(layer, entry)`, 쓸 때 `placeTarget(layer)`.
+    [delete] 썸네일은 `delete.thumb.own.layers`). 속성 칸에 "공통 위치로 되돌리기".
+  - 미리듣기 음량: 기본 50, 조절 막대(설정 `volume`, 모든 미리듣기 공통). 오너가 기본 음량이 너무 크다고 함.
+  - 메타데이터의 delete 미리듣기 음악에 "미리 들어 보기" 버튼 (실제로 들어갈 구간: 팩 음악은 그 맵의 PreviewTime부터,
+    추가한 파일은 시작 지점부터, 길이만큼 재생하고 멈춤. `#player2`).
+  - 레이트 체인저: BPM 범위·BPM 하나로 추가 (`bpm / 맵의 주 BPM` → 배속, 소수점 둘째 자리로 반올림. 0.50~2.00 밖은 거부).
+  - 주의: 개발 화면 시험에서 "미리 들어 보기"/"미리듣기"를 누르면 오너 PC에서 실제로 소리가 난다. 재생 버튼은 누르지 말고
+    `src`·상태만 확인할 것. `tools/shot.py`는 맵이 선택된 화면에서 캡처에 실패하는 일이 있다(원인 미확인) → 좌표로 확인.
+
+- 0.5.0 (2026-11-12 오너 요청):
+  - **저장/불러오기**: 프로그램 옆 `save\` 폴더에 팩 하나가 `<이름>.mpcpack` 파일 하나 (zip: project.json + info.json +
+    symbols.json + 그 팩이 쓰는 assets). 레이트 체인저(`rc`)는 저장하지 않고, 불러와도 지금 것을 그대로 둔다.
+    불러오면 osu!에 없는 맵을 알려 준다(`/api/check`, `S.missing`): 목록에 빨간 "osu!에 없음", 내보내기는 막힘.
+    이전 작업을 이어서 할 때도 같은 검사를 한다. 헤더 버튼: 새 팩 / 불러오기 / 저장.
+  - 썸네일 "이 맵만 다르게": 위치·크기에 더해 **색조·색 입히기·불투명도·그림자**도 그 맵에만 (`entry.layers[id]`에 함께 저장,
+    `ownTarget(layer)`; 옮길 때는 `placeTarget`이 위치 값도 채움).
+  - 레이어 "효과와의 순서" (`layer.under`): 없음 = 효과 위(기본), `grain` = 노이즈·주사선 아래, `all` = 모든 효과 아래
+    (배경과 한 장으로 합친 뒤 흐림·대비·채도까지 전체에 적용). `render`의 순서: 배경(+all) → 색·어둡게·비네트 → grain 레이어
+    → 주사선·노이즈 → 나머지 레이어.
+  - **기존 맵팩 수정** 탭 (레이트 체인저 옆, `edit.js`). 목적: 예전에 올린 맵팩을 맵 재구성·썸네일 통일 후 **같은 BeatmapSetID로
+    업데이트**. 불러온 맵셋은 일반 팩 프로젝트가 되고(`project.edit` = {setId, folder, slots, thumbs, unify, carry, deleteSlot}),
+    맵 고르기·팩 구성·썸네일·메타데이터 탭을 그대로 쓴다. 원래 난이도의 자리를 이은 entry는 `slot`(= BeatmapID)을 가진다.
+    "갈아끼우기"는 `S.replace`를 걸고 맵 고르기로 가서 "이 자리에 넣기". 내보내기는 `core.EditJob`:
+    - 항상 packs 폴더에 따로 만든다 (**원본 Songs 폴더는 읽기만**). 폴더 이름은 `<setId> ...` (stable은 폴더 앞 숫자를 맵셋 ID로 읽음).
+    - 그대로 둔 난이도(같은 파일 + 1.00배속)는 `osufile.patch`로 **ID·그림 줄·(선택) 메타데이터 줄만** 바꾸고 오디오는 원본 파일 그대로 복사
+      (mp3 변환 안 함: 오프셋 위험 0). 갈아끼운/새 난이도는 평소 변환(`transform(..., ids=)`).
+    - 모든 .osu에 `BeatmapSetID:<원래 ID>`, 자리를 이은 난이도는 원래 `BeatmapID`, 새 난이도는 `BeatmapID:0`.
+    - 한 BeatmapID가 쓰던 .osu 파일 이름을 다른 ID가 쓰지 않게 한다(서버와 stable이 파일 이름으로 온라인 난이도를 찾음).
+      .osu 파일 이름은 150자 이하. 업로드할 수 없는 확장자의 기타 파일은 복사하지 않는다(`UPLOADABLE`).
+    - 기존 delete 난이도(노트 2개 이하 + 4분 이상)는 다시 만들어 그 ID에 넣는다. mania가 아닌 난이도는 그대로 복사.
+  - **업로드 규칙 조사 결과** (2026-11-12, ppy/osu-server-beatmap-submission, osu-web, osu-wiki, osu-stable-issues):
+    업데이트/신규는 BeatmapSetID로만 정해짐. 본인 소유 + Pending/WIP/Graveyard만 가능(Graveyard는 슬롯 1개 필요, 자동 부활).
+    패키지에는 살아 있는 BeatmapID마다 .osu가 정확히 하나, 빠진 ID는 삭제. Creator는 계정 이름과 같아야 하고
+    Artist/Title/Source/Tags는 모든 난이도가 같아야 함. **업데이트된 난이도는 playcount/passcount가 0으로**(`UpdateBeatmapAsync`),
+    맵셋의 play_count·favourite_count·ID는 유지. 대표 그림/미리듣기는 DB 순서상 첫 난이도의 것(가장 낮은 BeatmapID로 추정).
+    stable은 업로드 창에 "Update Beatmap!" / "Upload NEW Beatmap!"을 보여 주고, 꼬이면 `Data\SubmissionCache` 삭제가 표준 해결책.
+    **확인 못 한 것**: stable이 쓰는 서버(web-10)는 비공개라 위 서버 규칙이 stable 업로드에도 똑같이 적용되는지,
+    같은 맵셋 ID의 .osz를 기존 폴더 위에 가져올 때 stable이 어떻게 합치는지. → 안내문은 "원래 폴더를 Songs 밖으로 옮긴 뒤 수정본 폴더를 넣기".
+  - 주의: Browser 창에서 같은 주소(#만 다른)로 `navigate`하면 새로 고쳐지지 않는다. CSS/JS를 바꾼 뒤에는 `location.reload()`.
+    헤더는 `min-width:0`이라 좁은 창에서 "수정 중" 칩이 먼저 줄어든다 (기본 창 1480에서 모두 보임).
+
 ## 구조
 - `src/mpc/` 본체, **표준 라이브러리만** 사용.
   - `osudb.py` osu!.db 파싱(mania만) + db에 없는 Songs 폴더는 직접 읽기. 읽기 전용.
@@ -78,6 +132,7 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
 - `build.ps1` → PyInstaller onefile `output/Map Pack Create.exe`(약 12MB) + `output/ffmpeg.exe`(Companella 것 복사, 105MB,
   exe 안에 넣지 않음: 실행마다 100MB를 푸는 것을 피하려고) + `output/README.txt`. 내보낸 팩은 기본 `output/packs/`.
 - 데이터: `%LOCALAPPDATA%\MapPackCreate` (settings.json, project.json 자동 저장, assets\ 사용자가 넣은 이미지·음악, logs\).
+  사용자가 직접 저장한 팩은 프로그램 옆 `save\*.mpcpack` (환경변수 `MPC_SAVE_DIR`로 바꿀 수 있음, 개발 서버는 `%TEMP%\mpc-dev\save`).
 
 ## 디자인 (anthropics/skills의 frontend-design을 기준으로 선택. MMR과 같은 원칙)
 - 크롬은 순수 무채색(`#111111` 바닥). 색은 데이터(단 심볼, 맵 배경, 경고 노랑)에만. 숫자는 Bahnschrift.
@@ -109,6 +164,7 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
 
 ## 명령
 - 테스트: `python tests/test_core.py` (변환 규칙 + 실제 맵으로 임시 폴더에 내보내기),
+  `python tests/test_edit.py` (기존 맵팩 수정: 실제 맵으로 임시 Songs에 가짜 업로드 맵셋을 만들어 ID 유지·원본 무변경 확인 + 저장/불러오기),
   `python tests/test_rate.py` (레이트 체인저: 맵을 임시 Songs 폴더에 복사해 원본 무변경 확인),
   `python tests/test_app.py` (종료 판단 + osu! 따라가기, `tests/fake_osu.py`가 osu! 역할)
 - 오디오 정확도 점검: `python tests/check_audio.py <오디오 파일>` (numpy 필요, 개발용)
@@ -117,7 +173,9 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
   Browser 창이 가려져 캡처가 안 될 때: `python tools/shot.py <pick|pack|thumb|meta|rate> <out.png>` (헤드리스 Edge, `#view=`로 그 파트를 연다).
   개발 서버에서 레이트 체인저를 시험할 때는 반드시 "packs 폴더에 따로 만들기"로 (원본 폴더 = 실제 osu! Songs).
 - 빌드: `powershell -ExecutionPolicy Bypass -File build.ps1` (exe + licenses + 공유용 zip)
-- 공유본 점검: `python tests/check_share.py` (zip을 다른 곳에 풀어 새 사용자처럼 실행. 프로그램이 켜져 있으면 거부한다)
+- 공유본 점검: `python tests/check_share.py` (zip을 다른 곳에 풀어 새 사용자처럼 실행. 0.5.0부터 오너가 켜 둔 프로그램은 건드리지 않고 자기가 띄운 것만 끈다)
+  오너가 프로그램을 켜 둔 채로 빌드하면 `build.ps1`이 실행 중인 exe를 `Osu!Mania MPC (previous build, delete me).exe`로 이름만 바꾸고
+  새 exe를 제자리에 둔다 (열려 있는 창은 그대로 동작, 그 파일은 다음 빌드 때 지워짐). **오너의 프로세스를 죽이지 말 것.**
 - exe 점검(창 없이): `MPC_NO_WINDOW=1 MPC_PORT=... MPC_TOKEN=... MPC_DATA_DIR=... MPC_PACKS_DIR=...`로 실행 후 API 호출.
 
 ## 아직 안 한 것 / 가정

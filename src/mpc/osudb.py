@@ -321,6 +321,15 @@ class Library:
                 self.by_md5[e['md5']] = e
                 self.extra += 1
 
+    def include(self, folder):
+        """Make every mania difficulty of one song folder known (by path), whatever osu!.db says."""
+        for e in scan_folder(folder):
+            if e['md5'] not in self.by_md5:
+                self._index(e)
+                self.entries.append(e)
+                self.by_md5[e['md5']] = e
+                self.extra += 1
+
     def search(self, query, keys=0, offset=0, limit=120):
         words = [w for w in (query or '').lower().split() if w]
         hits = []

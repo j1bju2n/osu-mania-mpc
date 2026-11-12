@@ -5,6 +5,7 @@ view: start (as on a normal start) | pick | pack | thumb | meta | rate.  The dev
 The page opens with #view=<view>, which the interface honours on start.
 """
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,10 +20,16 @@ for root in (os.environ.get('ProgramFiles(x86)'), os.environ.get('ProgramFiles')
         break
 if not edge:
     sys.exit('Edge not found')
-profile = os.path.join(tempfile.gettempdir(), 'mpc-dev', 'shot-profile')
 url = 'http://127.0.0.1:8791/?t=dev' + ('' if view == 'start' else '#view=' + view)
-subprocess.run([edge, '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run',
-                '--user-data-dir=' + profile, '--window-size=%s,%s' % (width, height),
-                '--virtual-time-budget=9000', '--screenshot=' + out, url],
-               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=90)
+if os.path.isfile(out):
+    os.remove(out)                       # never report an older picture as this run's
+for attempt in range(3):                 # headless Edge now and then exits without writing the file
+    profile = tempfile.mkdtemp(prefix='mpc-shot-')      # a fresh profile: a leftover browser can lock an old one
+    subprocess.run([edge, '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run',
+                    '--user-data-dir=' + profile, '--window-size=%s,%s' % (width, height),
+                    '--virtual-time-budget=9000', '--screenshot=' + out, url],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+    shutil.rmtree(profile, ignore_errors=True)
+    if os.path.isfile(out):
+        break
 print(out if os.path.isfile(out) else 'no screenshot produced')

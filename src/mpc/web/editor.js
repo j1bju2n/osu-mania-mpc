@@ -127,38 +127,30 @@
     ctx.fillStyle = '#151515';
     ctx.fillRect(0, 0, W, H);
 
+    // where each layer sits among the effects: under all of them (part of the picture), under the grain
+    // and scan lines only, or on top of everything (the default)
+    const shown = (thumb.layers || []).filter(l => l.visible !== false).map(l => placed(l, entry));
+    const below = shown.filter(l => l.under === 'all'), middle = shown.filter(l => l.under === 'grain');
+    const above = shown.filter(l => l.under !== 'all' && l.under !== 'grain');
     const img = await loadImage(bgUrl(thumb, entry));
-    if (img && img.naturalWidth) {
-      const bg = entry.bg || {}, zoom = clamp(Number(bg.zoom) || 1, 1, 3);
-      const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight) * zoom;
-      let dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
-      let x = (W - dw) * clamp(bg.x == null ? 50 : bg.x, 0, 100) / 100;
-      let y = (H - dh) * clamp(bg.y == null ? 50 : bg.y, 0, 100) / 100;
-      const filters = [];
-      if (fx.blur > 0) {
-        const px = fx.blur * s, m = px * 3;            // grow past the edges so the blur has no faded rim
-        const grow = (dw + 2 * m) / dw;
-        x -= m; y -= (dh * grow - dh) / 2; dw *= grow; dh *= grow;
-        filters.push('blur(' + px.toFixed(2) + 'px)');
-      }
-      if (fx.contrast !== 100) filters.push('contrast(' + fx.contrast + '%)');
-      if (fx.saturate !== 100) filters.push('saturate(' + fx.saturate + '%)');
-      ctx.filter = filters.join(' ') || 'none';
+    const filters = [], blurPx = fx.blur > 0 ? fx.blur * s : 0;
+    if (blurPx) filters.push('blur(' + blurPx.toFixed(2) + 'px)');
+    if (fx.contrast !== 100) filters.push('contrast(' + fx.contrast + '%)');
+    if (fx.saturate !== 100) filters.push('saturate(' + fx.saturate + '%)');
+    const filter = filters.join(' ') || 'none', margin = blurPx * 3;   // grow past the edges: no faded rim
+    if (below.length) {
+      const sheet = document.createElement('canvas');
+      sheet.width = W; sheet.height = H;
+      const g = sheet.getContext('2d');
+      g.fillStyle = '#151515';
+      g.fillRect(0, 0, W, H);
+      drawBackground(g, W, H, img, entry, preview, 'none', 0);
+      for (const layer of below) await drawLayer(g, layer, s, entry, preview);
+      ctx.filter = filter;
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, x, y, dw, dh);
+      ctx.drawImage(sheet, -margin, -margin * H / W, W + 2 * margin, H + 2 * margin * H / W);
       ctx.filter = 'none';
-    } else {
-      const g = ctx.createLinearGradient(0, 0, W, H);
-      g.addColorStop(0, '#242424'); g.addColorStop(1, '#141414');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, W, H);
-      if (preview) {
-        ctx.fillStyle = '#8a8a8a';
-        ctx.font = '500 ' + Math.max(11, Math.round(H * 0.06)) + 'px "Segoe UI", "Malgun Gothic", sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('썸네일 없음', W / 2, H / 2);
-      }
-    }
+    } else drawBackground(ctx, W, H, img, entry, preview, filter, margin);
     if (fx.tint > 0) {
       ctx.globalCompositeOperation = fx.tintMode || 'source-over';
       ctx.globalAlpha = fx.tint / 100;
@@ -178,6 +170,7 @@
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H);
     }
+    for (const layer of middle) await drawLayer(ctx, layer, s, entry, preview);
     if (fx.scan > 0) {
       const period = Math.max(2, Math.round(6 * s)), line = Math.max(1, Math.round(period / 2));
       ctx.fillStyle = 'rgba(0,0,0,' + (fx.scan / 100 * 0.6) + ')';
@@ -195,14 +188,53 @@
       ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
       ctx.imageSmoothingEnabled = true;
     }
-    for (const layer of thumb.layers || []) {
-      if (layer.visible === false) continue;
-      await drawLayer(ctx, layer, s, entry);
-    }
+    for (const layer of above) await drawLayer(ctx, layer, s, entry, preview);
     ctx.restore();
   }
 
+  /* The map's picture cropped to 16:9 (or a plain ground when it has none). margin: how far to grow it
+     past the edges when it is blurred. */
+  function drawBackground(ctx, W, H, img, entry, preview, filter, margin) {
+    if (img && img.naturalWidth) {
+      const bg = entry.bg || {}, zoom = clamp(Number(bg.zoom) || 1, 1, 3);
+      const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight) * zoom;
+      let dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+      let x = (W - dw) * clamp(bg.x == null ? 50 : bg.x, 0, 100) / 100;
+      let y = (H - dh) * clamp(bg.y == null ? 50 : bg.y, 0, 100) / 100;
+      if (margin > 0) {
+        const grow = (dw + 2 * margin) / dw;
+        x -= margin; y -= (dh * grow - dh) / 2; dw *= grow; dh *= grow;
+      }
+      ctx.filter = filter;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, x, y, dw, dh);
+      ctx.filter = 'none';
+      return;
+    }
+    const g = ctx.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, '#242424'); g.addColorStop(1, '#141414');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    if (preview) {
+      ctx.fillStyle = '#8a8a8a';
+      ctx.font = '500 ' + Math.max(11, Math.round(H * 0.06)) + 'px "Segoe UI", "Malgun Gothic", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('썸네일 없음', W / 2, H / 2);
+    }
+  }
+
   const ownSymbol = (layer, entry) => (entry.symbols && entry.symbols[layer.id]) || null;
+  const GEO = ['x', 'y', 'w', 'h', 'rot', 'size'];
+  const STYLE = ['hue', 'tint', 'tintColor', 'tintMode', 'opacity', 'shadow'];
+  const UNDER_TAG = { grain: '노이즈 아래', all: '효과 아래' };
+  const hasKeys = o => !!o && Object.keys(o).length > 0;
+
+  /* A layer as one picture shows it: the shared layer, or moved / resized / turned for that picture alone
+     when the picture has a place of its own for it (entry.layers[layer.id]). */
+  function placed(layer, entry) {
+    const own = entry && entry.layers && entry.layers[layer.id];
+    return own ? Object.assign({}, layer, own) : layer;
+  }
 
   function layerImageUrl(layer, entry) {
     if (layer.type === 'symbol' || layer.type === 'autodan') {
@@ -237,7 +269,7 @@
     return c;
   }
 
-  async function drawLayer(ctx, layer, s, entry) {
+  async function drawLayer(ctx, layer, s, entry, preview) {
     ctx.save();
     ctx.translate(layer.x * s, layer.y * s);
     ctx.rotate((layer.rot || 0) * Math.PI / 180);
@@ -281,6 +313,19 @@
         const w = own ? h * img.naturalWidth / img.naturalHeight : layer.w * s;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(tinted(img, layer, w, h), -w / 2, -h / 2, w, h);
+      } else if (preview && layer.type === 'autodan') {
+        // on screen only: this picture has no estimated dan, so say why the spot is empty
+        const h = layer.h * s;
+        ctx.shadowColor = 'transparent';
+        ctx.setLineDash([h * 0.06, h * 0.05]);
+        ctx.lineWidth = Math.max(1, h * 0.012);
+        ctx.strokeStyle = 'rgba(245,245,245,.75)';
+        ctx.strokeRect(-h / 2, -h / 2, h, h);
+        ctx.fillStyle = 'rgba(245,245,245,.9)';
+        ctx.font = '500 ' + Math.max(9, h * 0.1) + 'px "Segoe UI", "Malgun Gothic", sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('예상 난이도 없음', 0, -h * 0.08);
+        ctx.fillText('심볼을 골라 주세요', 0, h * 0.08);
       }
     }
     ctx.restore();
@@ -294,19 +339,32 @@
     return i < 0 ? null : Object.assign({}, p.entries[i], { index: i });
   }
 
+  /* The [delete] picture: an added image or one of the pack's maps, plus what was set for it alone in the
+     editor (delete.thumb.own: a symbol, effects, the crop). */
   function deleteEntry(p) {
-    const d = p.delete || {}, t = d.thumb || {};
+    const d = p.delete || {}, t = d.thumb || {}, own = t.own || {};
+    let base;
     if (t.mode === 'file' && t.asset) {
-      return { uid: 'delete', bgAsset: t.asset, bg: {}, rate: 1, version: d.name || 'delete', plain: !t.design,
+      base = { uid: 'delete', bgAsset: t.asset, bg: {}, rate: 1, version: d.name || 'delete', plain: !t.design,
         meta: { title: p.pack.title || '', artist: p.pack.artist || '', creator: p.pack.creator || '', version: '' }, rating: null };
+    } else {
+      const i = Math.max(0, p.entries.findIndex(e => e.uid === t.uid));
+      if (!p.entries[i]) return null;
+      base = Object.assign({}, p.entries[i], { index: i });
     }
-    const i = Math.max(0, p.entries.findIndex(e => e.uid === t.uid));
-    return p.entries[i] ? Object.assign({}, p.entries[i], { index: i }) : null;
+    if (own.fx) base.fx = own.fx;
+    if (own.bg) base.bg = own.bg;
+    if (hasKeys(own.symbols)) base.symbols = Object.assign({}, base.symbols, own.symbols);
+    if (hasKeys(own.layers)) base.layers = Object.assign({}, base.layers, own.layers);
+    return base;
   }
 
+  /* plain: an added [delete] image that is NOT to take the pack's design. It still shows the symbols picked
+     for it alone, so "the photo with just a dan symbol on it" is possible. */
   function designFor(entry) {
     const thumb = app.project().thumb;
-    return entry.plain ? { bgMode: 'each', fx: {}, layers: [] } : thumb;
+    if (!entry.plain) return thumb;
+    return { bgMode: 'each', fx: {}, layers: (thumb.layers || []).filter(l => ownSymbol(l, entry)) };
   }
 
   async function exportBlob(uid) {
@@ -341,7 +399,8 @@
   function snapshot() {
     const p = app.project();
     ed.undo.push(JSON.stringify({ thumb: p.thumb,
-      per: p.entries.map(e => ({ uid: e.uid, fx: e.fx || null, symbols: e.symbols || null })) }));
+      per: p.entries.map(e => ({ uid: e.uid, fx: e.fx || null, symbols: e.symbols || null, layers: e.layers || null })),
+      del: (p.delete && p.delete.thumb && p.delete.thumb.own) || null }));
     if (ed.undo.length > 60) ed.undo.shift();
   }
 
@@ -355,6 +414,10 @@
       if (!e) continue;
       if (o.fx) e.fx = o.fx; else delete e.fx;
       if (o.symbols) e.symbols = o.symbols; else delete e.symbols;
+      if (o.layers) e.layers = o.layers; else delete e.layers;
+    }
+    if (p.delete && p.delete.thumb) {
+      if (data.del) p.delete.thumb.own = data.del; else delete p.delete.thumb.own;
     }
     if (!layerById(ed.sel)) ed.sel = null;
     syncControls();
@@ -400,8 +463,9 @@
   }
 
   function placeSelection() {
-    const box = $('selBox'), layer = layerById(ed.sel), entry = ed.uid ? entryFor(ed.uid) : null;
-    if (!layer || !entry || entry.plain) { box.hidden = true; return; }
+    const box = $('selBox'), shared = layerById(ed.sel), entry = ed.uid ? entryFor(ed.uid) : null;
+    if (!shared || !entry) { box.hidden = true; return; }
+    const layer = placed(shared, entry);
     const size = visibleBox(layer, entry), k = ed.k;
     box.hidden = false;
     box.style.width = size.w * k + 'px';
@@ -444,7 +508,7 @@
         b.addEventListener('click', () => {
           ed.uid = uid;
           const shown = currentEntry();                  // a map with effects of its own opens on them
-          ed.fxScope = shown && shown.fx ? 'one' : 'all';
+          ed.fxScope = shown && (shown.fx || hasKeys(shown.layers)) ? 'one' : 'all';
           syncControls(); renderProps(); markFilm(); draw();
         });
         film.append(b);
@@ -456,7 +520,7 @@
     for (const b of Array.from(film.children)) {
       const entry = entryFor(b.dataset.uid);
       if (!entry) continue;
-      const own = b.dataset.uid !== 'delete' && (entry.fx || entry.bgAsset || (entry.symbols && Object.keys(entry.symbols).length));
+      const own = b.dataset.uid !== 'delete' && (entry.fx || entry.bgAsset || hasKeys(entry.symbols) || hasKeys(entry.layers));
       b.classList.toggle('own', !!own);
       b.lastChild.textContent = b.dataset.uid === 'delete' ? '[' + ((p.delete && p.delete.name) || 'delete') + '] 확인 필요'
         : (entry.index + 1) + '. ' + (own ? '(개별) ' : '') + (entry.meta ? entry.meta.title : '');
@@ -519,7 +583,9 @@
     $('layerEmpty').hidden = layers.length > 0;
     layers.slice().reverse().forEach(layer => {
       const li = el('li', (layer.id === ed.sel ? 'on ' : '') + (layer.visible === false ? 'off' : ''));
-      li.append(el('span', 'ic', ICON[layer.type]), el('span', 'nm', layerName(layer)));
+      const nm = el('span', 'nm', layerName(layer));
+      if (UNDER_TAG[layer.under]) nm.append(el('i', 'under', UNDER_TAG[layer.under]));
+      li.append(el('span', 'ic', ICON[layer.type]), nm);
       const acts = el('span', 'acts');
       const mk = (label, title, fn, danger) => {
         const b = el('button', 'btn quiet icon' + (danger ? ' danger' : ''), label);
@@ -597,34 +663,62 @@
     host.hidden = !layer;
     if (!layer) return;
     const entry = ed.uid ? entryFor(ed.uid) : null;
+    const g = placed(layer, entry), T = () => placeTarget(layer);      // shown values / where edits go
+    const ST = () => ownTarget(layer);                                 // the same for colour, opacity, shadow
     host.append(el('h3', null, layerName(layer)));
     const grid = el('div', 'grid4');
     grid.append(
-      numberInput('X', layer.x, v => { layer.x = v; }),
-      numberInput('Y', layer.y, v => { layer.y = v; }),
-      layer.type === 'text' ? numberInput('크기', layer.size, v => { layer.size = clamp(v, 8, 600); })
-        : numberInput('높이', layer.h, v => { const r = layer.w / layer.h; layer.h = clamp(v, 4, 4000); if (layer.type !== 'rect') layer.w = layer.h * r; }),
-      numberInput('회전', layer.rot || 0, v => { layer.rot = ((v % 360) + 360) % 360; }));
+      numberInput('X', g.x, v => { T().x = v; }),
+      numberInput('Y', g.y, v => { T().y = v; }),
+      layer.type === 'text' ? numberInput('크기', g.size, v => { T().size = clamp(v, 8, 600); })
+        : numberInput('높이', g.h, v => { const t = T(), r = t.w / t.h; t.h = clamp(v, 4, 4000); if (layer.type !== 'rect') t.w = t.h * r; }),
+      numberInput('회전', g.rot || 0, v => { T().rot = ((v % 360) + 360) % 360; }));
     host.append(grid);
     if (layer.type === 'rect') {
       const g2 = el('div', 'grid4');
-      g2.append(numberInput('너비', layer.w, v => { layer.w = clamp(v, 4, 4000); }),
+      g2.append(numberInput('너비', g.w, v => { T().w = clamp(v, 4, 4000); }),
         numberInput('모서리', layer.radius || 0, v => { layer.radius = clamp(v, 0, 2000); }));
       host.append(g2);
     }
+    const holder = currentEntry(), isDeletePic = ed.uid === 'delete';
+    const mine = holder && holder.layers && holder.layers[layer.id];
+    if (hasKeys(mine)) {                                               // this picture has its own settings for the layer
+      const what = [GEO.some(k => mine[k] != null) ? '위치·크기' : '', STYLE.some(k => mine[k] != null) ? '색·불투명도' : ''].filter(Boolean).join(', ');
+      const box = el('div', 'onlythis');
+      box.append(el('strong', null, (isDeletePic ? '[delete] 썸네일' : '이 맵') + '만의 ' + what));
+      box.append(el('p', 'hint', '이 레이어는 ' + (isDeletePic ? '[delete] 썸네일' : '지금 보는 맵') + '에서만 ' + what + '이(가) 따로 정해져 있습니다. 다른 맵은 공통 설정 그대로입니다.'));
+      const back = el('button', 'btn quiet', '공통 설정으로 되돌리기');
+      back.type = 'button';
+      back.addEventListener('click', () => { snapshot(); delete holder.layers[layer.id]; changed(); });
+      box.append(back);
+      host.append(box);
+    } else if (ed.fxScope === 'one' && holder) {
+      host.append(el('p', 'hint', '"이 맵만 다르게"가 켜져 있습니다. 지금 옮기거나 크기·회전·색·불투명도를 바꾸면 ' + (isDeletePic ? '[delete] 썸네일' : '지금 보는 맵') + '에만 적용됩니다.'));
+    }
     const align = el('div', 'align');
-    const size = entry ? visibleBox(layer, entry) : { w: layer.w, h: layer.h }, margin = 60;
-    [['왼쪽', () => { layer.x = margin + size.w / 2; }], ['가운데', () => { layer.x = BASE_W / 2; }],
-      ['오른쪽', () => { layer.x = BASE_W - margin - size.w / 2; }], ['위', () => { layer.y = margin + size.h / 2; }],
-      ['중간', () => { layer.y = BASE_H / 2; }], ['아래', () => { layer.y = BASE_H - margin - size.h / 2; }]].forEach(([label, fn]) => {
+    const size = entry ? visibleBox(g, entry) : { w: g.w, h: g.h }, margin = 60;
+    [['왼쪽', () => { T().x = margin + size.w / 2; }], ['가운데', () => { T().x = BASE_W / 2; }],
+      ['오른쪽', () => { T().x = BASE_W - margin - size.w / 2; }], ['위', () => { T().y = margin + size.h / 2; }],
+      ['중간', () => { T().y = BASE_H / 2; }], ['아래', () => { T().y = BASE_H - margin - size.h / 2; }]].forEach(([label, fn]) => {
       const b = el('button', 'btn', label);
       b.type = 'button';
       b.addEventListener('click', () => { snapshot(); fn(); changed(); });
       align.append(b);
     });
     host.append(align);
-    host.append(sliderLine('불투명도', Math.round((layer.opacity == null ? 1 : layer.opacity) * 100), 0, 100, 1, v => { layer.opacity = v / 100; }));
-    host.append(sliderLine('그림자', layer.shadow || 0, 0, 100, 1, v => { layer.shadow = v; }));
+    host.append(sliderLine('불투명도', Math.round((g.opacity == null ? 1 : g.opacity) * 100), 0, 100, 1, v => { ST().opacity = v / 100; }));
+    host.append(sliderLine('그림자', g.shadow || 0, 0, 100, 1, v => { ST().shadow = v; }));
+    const orderLine = el('div', 'line');
+    orderLine.append(el('span', null, '효과와의 순서'));
+    const order = el('select');
+    [['', '효과 위에 (기본)'], ['grain', '노이즈·주사선 아래'], ['all', '모든 효과 아래']].forEach(([v, t]) => { const o = el('option', null, t); o.value = v; order.append(o); });
+    order.value = UNDER_TAG[layer.under] ? layer.under : '';
+    order.setAttribute('aria-label', '효과와의 순서');
+    order.addEventListener('change', () => { snapshot(); if (order.value) layer.under = order.value; else delete layer.under; changed(); });
+    orderLine.append(order);
+    host.append(orderLine);
+    if (layer.under === 'grain') host.append(el('p', 'hint', '이 레이어 위로 노이즈와 주사선이 덮입니다. 흐림·어둡게·색 입히기·비네트는 받지 않습니다.'));
+    else if (layer.under === 'all') host.append(el('p', 'hint', '이 레이어가 배경 그림의 일부가 됩니다. 흐림·대비·채도·어둡게·색 입히기·비네트·주사선·노이즈가 그림 전체에 함께 적용됩니다.'));
 
     if (layer.type === 'symbol') {
       const b = el('button', 'btn symbtn');
@@ -646,12 +740,15 @@
     }
     if (layer.type === 'symbol' || layer.type === 'autodan') {
       const cur = currentEntry();
-      if (cur) {                                                   // this map only
-        const mine = ownSymbol(layer, cur);
+      if (cur) {                                                   // this picture only
+        const mine = ownSymbol(layer, cur), isDelete = ed.uid === 'delete';
         const box = el('div', 'onlythis');
-        box.append(el('strong', null, '이 맵만 다른 심볼'));
-        box.append(el('p', 'hint', mine ? '지금 보는 맵은 따로 고른 심볼을 쓰고 있습니다.' : '예: 팩에 감마와 델타가 섞여 있을 때 이 맵에만 다른 단 심볼을 넣습니다.'));
-        const pick = el('button', 'btn', mine ? '다른 심볼로 다시 고르기' : '이 맵만 심볼 바꾸기');
+        box.append(el('strong', null, isDelete ? '[delete] 썸네일에 넣을 심볼' : '이 맵만 다른 심볼'));
+        box.append(el('p', 'hint', mine ? (isDelete ? '[delete] 썸네일은 따로 고른 심볼을 쓰고 있습니다.' : '지금 보는 맵은 따로 고른 심볼을 쓰고 있습니다.')
+          : isDelete ? (layer.type === 'autodan' ? '[delete] 난이도에는 예상 난이도가 없어서 이 자리가 비어 있습니다. 넣을 심볼을 직접 고르세요.'
+            : '[delete] 썸네일에만 다른 단 심볼을 넣을 수 있습니다.')
+            : '예: 팩에 감마와 델타가 섞여 있을 때 이 맵에만 다른 단 심볼을 넣습니다.'));
+        const pick = el('button', 'btn', mine ? '다른 심볼로 다시 고르기' : isDelete ? '[delete]에 넣을 심볼 고르기' : '이 맵만 심볼 바꾸기');
         pick.type = 'button';
         pick.addEventListener('click', async () => {
           const src = await pickSymbol();
@@ -664,7 +761,7 @@
         });
         box.append(pick);
         if (mine) {
-          const back = el('button', 'btn quiet', '공통 심볼로 되돌리기');
+          const back = el('button', 'btn quiet', isDelete && layer.type === 'autodan' ? '심볼 빼기' : '공통 심볼로 되돌리기');
           back.type = 'button';
           back.addEventListener('click', () => { snapshot(); delete cur.symbols[layer.id]; changed(); });
           box.append(back);
@@ -674,20 +771,26 @@
     }
     if (layer.type === 'symbol' || layer.type === 'autodan' || layer.type === 'image') {
       host.append(el('h3', 'sub', '색 바꾸기'));
-      host.append(sliderLine('색조 돌리기', layer.hue || 0, 0, 360, 1, v => { layer.hue = v; }));
+      host.append(sliderLine('색조 돌리기', g.hue || 0, 0, 360, 1, v => { ST().hue = v; }));
       const line = el('div', 'line');
       line.append(el('span', null, '색 입히기'));
       const color = el('input');
-      color.type = 'color'; color.value = layer.tintColor || '#ffffff';
+      color.type = 'color'; color.value = g.tintColor || '#ffffff';
       let armed = false;
-      color.addEventListener('input', () => { if (!armed) { snapshot(); armed = true; } layer.tintColor = color.value; if (!layer.tint) layer.tint = 100; app.changed(); draw(); });
+      color.addEventListener('input', () => {
+        if (!armed) { snapshot(); armed = true; }
+        const t = ST();
+        t.tintColor = color.value;
+        if (!placed(layer, shownEntry()).tint) t.tint = 100;
+        app.changed(); draw();
+      });
       color.addEventListener('change', () => { armed = false; changed(); });
       const mode = el('select');
       [['color', '색조만'], ['overlay', '오버레이'], ['multiply', '곱하기'], ['screen', '스크린'], ['source-atop', '단색으로 덮기']].forEach(([v, t]) => { const o = el('option', null, t); o.value = v; mode.append(o); });
-      mode.value = layer.tintMode || 'color';
-      mode.addEventListener('change', () => { snapshot(); layer.tintMode = mode.value; changed(); });
+      mode.value = g.tintMode || 'color';
+      mode.addEventListener('change', () => { snapshot(); ST().tintMode = mode.value; changed(); });
       line.append(color, mode);
-      host.append(line, sliderLine('색 세기', layer.tint || 0, 0, 100, 1, v => { layer.tint = v; }));
+      host.append(line, sliderLine('색 세기', g.tint || 0, 0, 100, 1, v => { ST().tint = v; }));
     }
     if (layer.type === 'image') {
       const b = el('button', 'btn', '다른 이미지로 바꾸기');
@@ -888,14 +991,14 @@
 
   function hit(p) {
     const entry = ed.uid ? entryFor(ed.uid) : null, layers = thumb().layers || [];
-    if (!entry || entry.plain) return null;
+    if (!entry) return null;
     for (let i = layers.length - 1; i >= 0; i--) {
-      const l = layers[i];
-      if (l.visible === false) continue;
+      if (layers[i].visible === false) continue;
+      const l = placed(layers[i], entry);
       const size = visibleBox(l, entry), a = -(l.rot || 0) * Math.PI / 180;
       const dx = p.x - l.x, dy = p.y - l.y;
       const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
-      if (Math.abs(lx) <= size.w / 2 + 6 && Math.abs(ly) <= size.h / 2 + 6) return l;
+      if (Math.abs(lx) <= size.w / 2 + 6 && Math.abs(ly) <= size.h / 2 + 6) return layers[i];
     }
     return null;
   }
@@ -909,10 +1012,10 @@
       return;
     }
     if (layer.id !== ed.sel) { ed.sel = layer.id; renderLayerList(); renderProps(); placeSelection(); }
-    const entry = entryFor(ed.uid), size = visibleBox(layer, entry);
-    ed.drag = { mode: handle || 'move', start: p, layer, moved: false,
-      orig: { x: layer.x, y: layer.y, w: layer.w, h: layer.h, size: layer.size, rot: layer.rot || 0 },
-      dist: Math.hypot(p.x - layer.x, p.y - layer.y) || 1, box: size };
+    const entry = entryFor(ed.uid), now = placed(layer, entry), size = visibleBox(now, entry);
+    ed.drag = { mode: handle || 'move', start: p, layer, target: null, moved: false,
+      orig: { x: now.x, y: now.y, w: now.w, h: now.h, size: now.size, rot: now.rot || 0 },
+      dist: Math.hypot(p.x - now.x, p.y - now.y) || 1, box: size };
     $('overlay').setPointerCapture(ev.pointerId);
     ev.preventDefault();
   }
@@ -920,15 +1023,20 @@
   function onMove(ev) {
     const d = ed.drag;
     if (!d) return;
-    const p = toLayout(ev), l = d.layer, o = d.orig;
-    if (!d.moved) { if (Math.hypot(p.x - d.start.x, p.y - d.start.y) < 2) return; d.moved = true; snapshot(); }
+    const p = toLayout(ev), o = d.orig, type = d.layer.type;
+    if (!d.moved) {
+      if (Math.hypot(p.x - d.start.x, p.y - d.start.y) < 2) return;
+      d.moved = true; snapshot();
+      d.target = placeTarget(d.layer);               // the shared layer, or this picture's own place for it
+    }
+    const l = d.target;
     let gv = null, gh = null;
     if (d.mode === 'move') {
       let x = o.x + p.x - d.start.x, y = o.y + p.y - d.start.y;
       const snap = 10 / Math.max(ed.k, 0.3) * 0.5;
       const xs = [[BASE_W / 2, 0], [d.box.w / 2, -d.box.w / 2], [BASE_W - d.box.w / 2, d.box.w / 2]];
       const ys = [[BASE_H / 2, 0], [d.box.h / 2, -d.box.h / 2], [BASE_H - d.box.h / 2, d.box.h / 2]];
-      if (!ev.altKey && !(l.rot % 180)) {
+      if (!ev.altKey && !((l.rot || 0) % 180)) {
         for (const [target, off] of xs) if (Math.abs(x - target) < snap) { x = target; gv = target + off; break; }
         for (const [target, off] of ys) if (Math.abs(y - target) < snap) { y = target; gh = target + off; break; }
       }
@@ -941,7 +1049,7 @@
       l.rot = Math.round(deg * 10) / 10;
     } else if (d.mode.length === 2) {
       const f = clamp(Math.hypot(p.x - l.x, p.y - l.y) / d.dist, 0.03, 40);
-      if (l.type === 'text') l.size = clamp(Math.round(o.size * f), 8, 600);
+      if (type === 'text') l.size = clamp(Math.round(o.size * f), 8, 600);
       else { l.w = Math.max(4, o.w * f); l.h = Math.max(4, o.h * f); }
     } else {
       const a = -(l.rot || 0) * Math.PI / 180, dx = p.x - l.x, dy = p.y - l.y;
@@ -976,7 +1084,8 @@
     const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
     if (moves[ev.key]) {
       ev.preventDefault(); snapshot();
-      layer.x += moves[ev.key][0]; layer.y += moves[ev.key][1];
+      const t = placeTarget(layer);
+      t.x += moves[ev.key][0]; t.y += moves[ev.key][1];
       changed();
     } else if (ev.key === 'Delete' || ev.key === 'Backspace') {
       ev.preventDefault(); snapshot(); removeLayer(layer.id); changed();
@@ -986,29 +1095,63 @@
   }
 
   // ---- left panel controls
+  /* The object that holds what belongs to the picture on screen alone (a symbol, effects, the crop):
+     the pack entry itself, or for the [delete] picture its own box in the project. */
   function currentEntry() {
-    return app.project().entries.find(e => e.uid === ed.uid) || null;
+    const p = app.project();
+    if (ed.uid === 'delete') {
+      if (!p.delete || !deleteEntry(p)) return null;
+      p.delete.thumb = p.delete.thumb || {};
+      p.delete.thumb.own = p.delete.thumb.own || {};
+      return p.delete.thumb.own;
+    }
+    return p.entries.find(e => e.uid === ed.uid) || null;
+  }
+
+  /* What is actually drawn for the picture on screen (for [delete]: its base picture with its own settings). */
+  const shownEntry = () => (ed.uid ? entryFor(ed.uid) : null);
+
+  /* Where a move, resize or turn is written: the shared layer, or, while "이 맵만 다르게" is on, the place this
+     picture keeps for the layer (made on the first change, starting from where the layer is now). */
+  function placeTarget(layer) {
+    const own = ownTarget(layer);
+    if (own === layer) return layer;
+    const now = placed(layer, shownEntry());
+    GEO.forEach(k => { if (own[k] == null && now[k] != null) own[k] = now[k]; });
+    return own;
+  }
+
+  /* Where a change that belongs to one layer is written: the shared layer, or, while "이 맵만 다르게" is on,
+     what this picture keeps for the layer. Colour, opacity and shadow go straight here; a move goes through
+     placeTarget, which also pins the layer's place for this picture. */
+  function ownTarget(layer) {
+    const holder = currentEntry();
+    if (ed.fxScope !== 'one' || !holder) return layer;
+    holder.layers = holder.layers || {};
+    if (!holder.layers[layer.id]) holder.layers[layer.id] = {};
+    return holder.layers[layer.id];
   }
 
   function syncBgControls() {
-    const entry = currentEntry(), bg = (entry && entry.bg) || {};
+    const entry = currentEntry(), shown = shownEntry(), bg = (shown && shown.bg) || {}, isDelete = ed.uid === 'delete';
     const set = (id, value) => { const i = $(id); i.value = value; i.nextElementSibling.textContent = id === 'bgZoom' ? Number(value).toFixed(2) : value; i.disabled = !entry; };
     set('bgZoom', bg.zoom || 1); set('bgX', bg.x == null ? 50 : bg.x); set('bgY', bg.y == null ? 50 : bg.y);
-    $('bgReplace').disabled = !entry;
-    $('bgRestore').hidden = !(entry && entry.bgAsset);
+    $('bgReplace').disabled = !entry || isDelete;          // the [delete] picture is chosen on the metadata page
+    $('bgReplace').title = isDelete ? '[delete] 썸네일의 그림은 메타데이터 창의 "delete 난이도"에서 고릅니다' : '';
+    $('bgRestore').hidden = isDelete || !(entry && entry.bgAsset);
   }
 
-  /* The effect values on screen and where edits go: the shared design, or the map being shown. */
+  /* The effect values on screen and where edits go: the shared design, or the picture being shown. */
   function fxShown() {
-    const entry = currentEntry();
-    if (ed.fxScope === 'one' && entry) return Object.assign({}, FX_DEFAULT, entry.fx || thumb().fx);
+    const entry = currentEntry(), shown = shownEntry();
+    if (ed.fxScope === 'one' && entry) return Object.assign({}, FX_DEFAULT, entry.fx || (shown && shown.fx) || thumb().fx);
     return Object.assign({}, FX_DEFAULT, thumb().fx);
   }
 
   function fxTarget() {
-    const entry = currentEntry(), t = thumb();
+    const entry = currentEntry(), shown = shownEntry(), t = thumb();
     if (ed.fxScope === 'one' && entry) {
-      if (!entry.fx) entry.fx = Object.assign({}, FX_DEFAULT, t.fx);
+      if (!entry.fx) entry.fx = Object.assign({}, FX_DEFAULT, (shown && shown.fx) || t.fx);
       return entry.fx;
     }
     t.fx = Object.assign({}, FX_DEFAULT, t.fx);
@@ -1026,8 +1169,9 @@
       if (input.type === 'range') input.nextElementSibling.textContent = fx[key];
     });
     document.querySelectorAll('input[name="fxScope"]').forEach(r => { r.checked = r.value === ed.fxScope; r.disabled = r.value === 'one' && !entry; });
-    $('fxScopeNote').textContent = one ? '지금 보고 있는 맵에만 적용됩니다. 나머지 맵은 그대로입니다.'
-      : (entry && entry.fx ? '모든 맵에 똑같이 적용됩니다. 단, 지금 보는 맵은 따로 정한 효과를 쓰고 있어 여기서 바꿔도 달라지지 않습니다.' : '모든 맵에 똑같이 적용됩니다.');
+    const what = ed.uid === 'delete' ? '[delete] 썸네일' : '지금 보는 맵';
+    $('fxScopeNote').textContent = one ? what + '에만 적용됩니다: 효과, 그리고 심볼·글자 등을 옮기거나 크기·색조·불투명도를 바꾸는 것. 나머지는 그대로입니다.'
+      : (entry && entry.fx ? '모든 맵에 똑같이 적용됩니다. 단, ' + what + '은(는) 따로 정한 효과를 쓰고 있어 여기서 바꿔도 달라지지 않습니다.' : '모든 맵에 똑같이 적용됩니다.');
     $('fxOneClear').hidden = !(entry && entry.fx);
     document.querySelectorAll('input[name="bgMode"]').forEach(r => { r.checked = r.value === (t.bgMode || 'each'); });
     $('commonRow').hidden = t.bgMode !== 'common';
@@ -1060,7 +1204,7 @@
       if (!entry) return;
       snapshot(); delete entry.fx; ed.fxScope = 'all'; syncControls(); changed();
     });
-    document.querySelectorAll('input[name="fxScope"]').forEach(r => r.addEventListener('change', () => { ed.fxScope = r.value; syncControls(); }));
+    document.querySelectorAll('input[name="fxScope"]').forEach(r => r.addEventListener('change', () => { ed.fxScope = r.value; syncControls(); renderProps(); }));
     $('symAdd').addEventListener('click', addCustomSymbols);
     document.querySelectorAll('input[name="bgMode"]').forEach(r => r.addEventListener('change', () => {
       snapshot(); thumb().bgMode = r.value; syncControls(); changed();
@@ -1087,7 +1231,7 @@
     });
     $('bgReplace').addEventListener('click', async () => {
       const entry = currentEntry();
-      if (!entry) return;
+      if (!entry || ed.uid === 'delete') return;
       const file = await app.pickFile('image/png,image/jpeg,image/webp,image/gif,image/bmp');
       const id = file && await app.upload(file);
       if (!id) return;

@@ -20,10 +20,14 @@
     <button role="tab" data-view="meta" aria-selected="false"><b>4</b>메타데이터</button>
     <span class="steps-sep" aria-hidden="true"></span>
     <button role="tab" data-view="rate" aria-selected="false">레이트 체인저</button>
+    <button role="tab" data-view="edit" aria-selected="false">기존 맵팩 수정</button>
   </nav>
+  <span class="editchip clip" id="editChip" hidden></span>
   <div class="grow"></div>
   <span class="saved" id="saved" aria-live="polite"></span>
   <button class="btn quiet" id="newBtn" type="button">새 팩</button>
+  <button class="btn quiet" id="loadBtn" type="button">불러오기</button>
+  <button class="btn quiet" id="saveBtn" type="button">저장</button>
   <button class="btn primary" id="exportBtn" type="button">내보내기</button>
 </header>
 
@@ -51,6 +55,10 @@
 <!-- ============================================================ 1. pick -->
 <section class="view pick" id="view-pick" role="tabpanel">
   <section class="stage" aria-label="선택한 맵">
+    <div class="replacebar" id="replaceBar" hidden>
+      <span id="replaceText"></span>
+      <button class="btn" type="button" id="replaceCancel">취소</button>
+    </div>
     <div class="blank" id="stageEmpty">
       <p class="blank-title">osu!에서 맵을 고르면 여기에 뜹니다</p>
       <p>osu!를 켜고 곡 선택 화면에서 맵을 고르세요. 직접 찾으려면 왼쪽 끝의 "맵 목록"을 펼치면 됩니다. 고른 맵의 배속을 정한 뒤 팩에 하나씩 넣습니다.</p>
@@ -64,7 +72,10 @@
           <h2 id="mTitle"></h2>
           <p id="mArtist"></p>
         </div>
-        <button class="btn ghost play" id="playBtn" type="button">미리듣기</button>
+        <div class="playbox">
+          <label class="vol"><span>음량</span><input type="range" class="volume" min="0" max="100" step="1" value="50" aria-label="미리듣기 음량"><output class="num">50</output></label>
+          <button class="btn ghost" id="playBtn" type="button">미리듣기</button>
+        </div>
       </div>
 
       <dl class="facts">
@@ -143,6 +154,7 @@
       </div>
       <div id="spreadRows"></div>
     </div>
+    <p class="packmissing" id="packMissing" hidden></p>
     <ol class="entries" id="entries"></ol>
     <p class="blank small" id="packEmpty">아직 넣은 맵이 없습니다. 맵을 고르고 배속을 정한 뒤 "팩에 넣기"를 누르세요.</p>
   </aside>
@@ -306,7 +318,7 @@
       <button class="btn" type="button" id="tagsFromMaps">맵 제작자 이름을 태그에 넣기</button>
     </div>
     <label class="check"><input type="checkbox" id="pResetIds" checked><span class="box"></span>모든 난이도를 미업로드 상태로 바꾸기</label>
-    <p class="hint">모든 난이도의 BeatmapID를 0, BeatmapSetID를 -1로 바꿉니다. 원본 맵의 온라인 ID가 남아 있으면 업로드할 때 다른 사람의 맵으로 인식되므로, 새로 올리는 팩이라면 켜 두세요.</p>
+    <p class="hint" id="pResetHint"></p>
     <div class="two">
       <label class="field"><span>OD 통일 <i class="dim">비우면 원본 유지</i></span><input class="num" type="text" id="pOd" inputmode="decimal" placeholder="원본 유지" autocomplete="off"></label>
       <label class="field"><span>HP 통일 <i class="dim">비우면 원본 유지</i></span><input class="num" type="text" id="pHp" inputmode="decimal" placeholder="원본 유지" autocomplete="off"></label>
@@ -343,6 +355,10 @@
         </div>
         <label class="check"><input type="radio" name="dPrev" value="none"><span class="box round"></span>아무 음악도 넣지 않기</label>
         <p class="hint" id="dPrevHint"></p>
+        <div class="row" id="dPrevPlayRow">
+          <button class="btn" type="button" id="dPrevPlay">미리 들어 보기</button>
+          <label class="vol"><span>음량</span><input type="range" class="volume" min="0" max="100" step="1" value="50" aria-label="미리듣기 음량"><output class="num">50</output></label>
+        </div>
       </fieldset>
     </div>
   </div>
@@ -392,6 +408,20 @@
         <div class="grow"></div>
         <button class="btn quiet danger" type="button" id="rcClear">모두 지우기</button>
       </div>
+      <div class="rc-range rc-bpm">
+        <span class="label">BPM 범위</span>
+        <input class="num" type="text" id="rcBpmFrom" inputmode="decimal" aria-label="시작 BPM" autocomplete="off">
+        <span>부터</span>
+        <input class="num" type="text" id="rcBpmTo" inputmode="decimal" aria-label="끝 BPM" autocomplete="off">
+        <span>까지</span>
+        <input class="num" type="text" id="rcBpmStep" inputmode="decimal" value="10" aria-label="BPM 간격" autocomplete="off">
+        <span>BPM 간격으로</span>
+        <button class="btn" type="button" id="rcAddBpm">추가</button>
+        <span class="rc-sep" aria-hidden="true"></span>
+        <input class="num" type="text" id="rcBpmOne" inputmode="decimal" aria-label="BPM 하나" autocomplete="off">
+        <button class="btn" type="button" id="rcAddBpmOne">BPM 하나 추가</button>
+        <span class="dim rc-bpmnote" id="rcBpmNote"></span>
+      </div>
       <div class="rc-chart" id="rcChart"></div>
       <ol class="rc-list" id="rcList"></ol>
       <p class="blank small" id="rcNone">아직 넣은 배속이 없습니다. 위에서 범위를 정해 "추가"를 누르세요.</p>
@@ -423,6 +453,71 @@
     <button class="btn primary big full" type="button" id="rcGo">배속 난이도 만들기</button>
   </aside>
 </section>
+
+<!-- ============================================================ rebuilding an uploaded set -->
+<section class="view editv" id="view-edit" role="tabpanel" hidden>
+  <div class="ed-main">
+    <div id="edChoose">
+      <div class="blank" id="edEmpty">
+        <p class="blank-title">이미 올린 맵셋 고치기</p>
+        <p>osu!에서 고칠 맵셋의 아무 난이도나 고르거나, 왼쪽 끝의 "맵 목록"에서 고르세요. 맵셋과 난이도의 온라인 ID를 그대로 둔 채 썸네일을 통일하거나 맵을 갈아끼운 수정본을 만듭니다. 그 수정본을 올리면 새 맵셋이 생기지 않고 기존 맵셋이 업데이트됩니다. 원본 폴더는 읽기만 합니다.</p>
+      </div>
+      <div class="ed-found" id="edFound" hidden>
+        <p class="label">고른 맵셋</p>
+        <h2 id="edFoundTitle"></h2>
+        <p class="dim" id="edFoundFacts"></p>
+        <ul class="problems" id="edFoundWarn"></ul>
+        <ol class="ed-preview" id="edFoundList"></ol>
+        <div class="row">
+          <button class="btn primary big" type="button" id="edLoad">이 맵셋 불러와서 고치기</button>
+          <span class="dim" id="edLoadNote"></span>
+        </div>
+      </div>
+    </div>
+    <div id="edBody" hidden>
+      <div class="headrow">
+        <div class="ed-headtext">
+          <p class="label">수정 중인 맵셋</p>
+          <h2 id="edTitle"></h2>
+          <p class="dim" id="edFacts"></p>
+        </div>
+        <span class="grow"></span>
+        <button class="btn quiet danger" type="button" id="edClose">수정 그만두기</button>
+      </div>
+      <ul class="problems" id="edWarn"></ul>
+      <h3 class="ed-h">원래 있던 난이도</h3>
+      <p class="hint">왼쪽은 지금 사이트에 올라가 있는 난이도, 오른쪽은 업데이트 뒤에 그 ID(링크)에 들어갈 내용입니다.</p>
+      <ol class="ed-slots" id="edSlots"></ol>
+      <h3 class="ed-h" id="edNewHead">새로 올라가는 난이도</h3>
+      <p class="hint" id="edNewHint">원래 난이도의 자리를 잇지 않는 맵입니다. 업로드할 때 새 BeatmapID를 받습니다. 빠진 자리가 있으면 그 ID를 물려줄 수 있습니다.</p>
+      <ol class="ed-slots" id="edNew"></ol>
+      <div class="row">
+        <button class="btn" type="button" id="edAdd">맵 고르기에서 새 난이도 넣기</button>
+      </div>
+    </div>
+  </div>
+  <aside class="ed-side" id="edSide" hidden>
+    <h2>고치는 방식</h2>
+    <label class="check"><input type="checkbox" id="edThumbs"><span class="box"></span>모든 난이도의 썸네일을 "썸네일" 탭의 디자인으로 새로 만들기</label>
+    <p class="hint">끄면 그대로 둔 난이도는 원래 그림을 그대로 씁니다. 갈아끼우거나 새로 넣은 난이도는 언제나 새로 만듭니다.</p>
+    <label class="check"><input type="checkbox" id="edUnify"><span class="box"></span>그대로 둔 난이도의 제목, 아티스트, 제작자, 출처, 태그도 "메타데이터" 탭 내용으로 맞추기</label>
+    <p class="hint">업로드 서버는 한 맵셋의 모든 난이도가 이 값들이 같은지 검사합니다. 맵을 갈아끼우거나 새로 넣었다면 켜 두세요. 그대로 둔 난이도는 이 줄들과 ID, 그림 이름만 바뀌고 노트와 오디오는 한 글자도 바뀌지 않습니다.</p>
+    <div class="row wrap">
+      <button class="btn" type="button" data-go="thumb">썸네일 꾸미기</button>
+      <button class="btn" type="button" data-go="meta">메타데이터</button>
+      <button class="btn" type="button" data-go="pack">팩 구성 보기</button>
+    </div>
+
+    <h2 class="gap">업데이트하면</h2>
+    <ul class="ed-facts">
+      <li><b>그대로 유지</b> 맵셋 주소와 ID, 맵셋 전체 플레이 수와 즐겨찾기, 자리를 이은 난이도의 주소(BeatmapID)</li>
+      <li><b>0으로 돌아감</b> 업데이트된 난이도 하나하나의 플레이 수와 패스 수. 현재 공개된 업로드 서버 코드 기준이며, 맵을 바꾸지 않은 난이도도 같습니다</li>
+      <li><b>사라짐</b> 수정본에서 뺀 난이도 (사이트에서 삭제됩니다)</li>
+      <li><b>조건</b> Ranked, Loved, Qualified 맵셋은 업데이트할 수 없습니다. Graveyard 맵셋은 업로드 슬롯이 하나 비어 있어야 되살아납니다</li>
+    </ul>
+    <button class="btn primary big full" type="button" id="edGo">수정본 내보내기</button>
+  </aside>
+</section>
 </div>
 </main>
 
@@ -433,7 +528,7 @@
     <div id="exStart">
       <p class="lead" id="exSummary"></p>
       <ul class="problems" id="exProblems"></ul>
-      <fieldset>
+      <fieldset id="exDestBox">
         <legend>내보낼 곳</legend>
         <label class="check"><input type="radio" name="dest" value="packs" checked><span class="box round"></span>프로그램 옆 packs 폴더 <span class="dim clip" id="destPacks"></span></label>
         <label class="check"><input type="radio" name="dest" value="songs"><span class="box round"></span>osu! Songs 폴더에 바로 넣기 <span class="dim clip" id="destSongs"></span></label>
@@ -455,6 +550,10 @@
         <strong>업로드 순서 안내</strong>
         <p>[delete]난이도를 반드시 먼저 업로드 해주세요. 그래야 썸네일 및 맵팩의 미리듣기 재생구간이 먼저 설정됩니다. 그 후에 나머지 난이도들을 다시 넣고 [delete]난이도에 들어가서 맵을 업데이트 해주세요.</p>
       </div>
+      <div class="guide-note" id="exGuideEdit" hidden>
+        <strong>기존 맵셋 업데이트용 수정본</strong>
+        <p>모든 난이도에 원래 맵셋의 온라인 ID가 들어가고, 원래 난이도의 자리를 이은 난이도는 그 BeatmapID를 그대로 가집니다. osu!는 이 ID를 보고 새 업로드가 아니라 기존 맵셋 업데이트로 처리합니다. 수정본은 프로그램 옆 packs 폴더에 따로 만들고, osu! 안의 원본 폴더는 건드리지 않습니다.</p>
+      </div>
       <div class="dlg-actions">
         <button class="btn" type="button" data-close>닫기</button>
         <button class="btn primary" type="button" id="exGo">내보내기 시작</button>
@@ -471,7 +570,23 @@
     <div id="exDone" hidden>
       <p class="lead" id="exDoneLead"></p>
       <p class="path" id="exFolder"></p>
-      <div class="guide-note strong">
+      <div class="guide-note strong" id="exDoneEdit" hidden>
+        <strong>기존 맵셋에 덮어 올리는 순서</strong>
+        <ol>
+          <li>osu!를 끕니다.</li>
+          <li>osu! Songs 폴더에 있는 원래 맵셋 폴더를 Songs 밖으로 옮겨 보관합니다. 같은 맵셋이 두 폴더에 있으면 osu!가 ID를 엉뚱하게 바꿀 수 있습니다.</li>
+          <li>위의 수정본 폴더를 Songs 폴더에 넣습니다. 폴더 이름 맨 앞의 숫자는 맵셋 ID이니 바꾸지 마세요.</li>
+          <li>osu!를 켜고 로그인한 뒤, 수정본의 아무 난이도나 에디터로 열어 File &gt; Upload Beatmap을 누릅니다.</li>
+          <li>업로드 창에 <b>Update Beatmap!</b> 이라고 나오는지 확인하고 올립니다. <b>Upload NEW Beatmap!</b> 이라고 나오면 올리지 말고 취소하세요.</li>
+        </ol>
+        <p class="hint">NEW로 나오거나 "isn't yours" 오류가 나면: osu!를 끄고 osu! 폴더의 Data\SubmissionCache 폴더를 지운 뒤, Songs에 같은 맵셋 폴더가 또 없는지 확인하고 다시 켜서 F5를 누르세요. 제작자(Creator)가 지금 osu! 계정 이름과 같아야 합니다.</p>
+        <table class="ed-report">
+          <thead><tr><th>난이도</th><th>BeatmapID</th><th>처리</th></tr></thead>
+          <tbody id="exEditRows"></tbody>
+        </table>
+        <p class="hint" id="exEditNote"></p>
+      </div>
+      <div class="guide-note strong" id="exDoneGuide">
         <strong>업로드 순서 안내</strong>
         <p>[delete]난이도를 반드시 먼저 업로드 해주세요. 그래야 썸네일 및 맵팩의 미리듣기 재생구간이 먼저 설정됩니다. 그 후에 나머지 난이도들을 다시 넣고 [delete]난이도에 들어가서 맵을 업데이트 해주세요.</p>
         <ol>
@@ -540,6 +655,47 @@
   </div>
 </dialog>
 
+<dialog id="saveDlg" aria-labelledby="saveTitle">
+  <div class="dlg">
+    <h2 id="saveTitle">팩 저장</h2>
+    <p class="hint">지금 만들고 있는 팩 구성(넣은 맵과 배속, 썸네일 디자인과 넣은 이미지, 메타데이터)을 파일 하나로 저장합니다. 맵 파일 자체는 들어가지 않습니다. 레이트 체인저는 저장하지 않습니다.</p>
+    <label class="field"><span>저장할 이름</span><input type="text" id="saveName" maxlength="80" autocomplete="off" spellcheck="false"></label>
+    <p class="path" id="saveFolder"></p>
+    <p class="label savelabel" id="saveListLabel">이미 저장된 팩 <i class="dim">누르면 그 이름으로 덮어씁니다</i></p>
+    <ol class="savelist compact" id="saveList"></ol>
+    <div class="dlg-actions">
+      <button class="btn" type="button" data-close>취소</button>
+      <button class="btn primary" type="button" id="saveGo">저장</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="loadDlg" aria-labelledby="loadTitle">
+  <div class="dlg wide">
+    <h2 id="loadTitle">저장한 팩 불러오기</h2>
+    <p class="path" id="loadFolder"></p>
+    <ol class="savelist" id="loadList"></ol>
+    <p class="blank small" id="loadEmpty" hidden>아직 저장한 팩이 없습니다. 위쪽의 "저장"을 누르면 프로그램 옆 save 폴더에 저장됩니다.</p>
+    <div class="dlg-actions">
+      <button class="btn quiet" type="button" id="loadOpen">save 폴더 열기</button>
+      <span class="grow"></span>
+      <button class="btn" type="button" data-close>닫기</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="noticeDlg" aria-labelledby="noticeTitle">
+  <div class="dlg">
+    <h2 id="noticeTitle"></h2>
+    <p class="lead" id="noticeLead"></p>
+    <ol class="noticelist" id="noticeList"></ol>
+    <p class="hint" id="noticeHint"></p>
+    <div class="dlg-actions">
+      <button class="btn primary" type="button" data-close>확인</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="confirmDlg">
   <div class="dlg narrow">
     <p class="lead" id="confirmText"></p>
@@ -552,15 +708,17 @@
 
 <input type="file" id="filePick" hidden>
 <audio id="player" preload="none"></audio>
+<audio id="player2" preload="none"></audio>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <div class="tipfloat" id="tipFloat" role="tooltip" hidden></div>
 <div class="dead" id="dead" role="alert" hidden>
   <p><strong>프로그램과의 연결이 끊어졌습니다.</strong></p>
-  <p>이 창을 닫고 Map Pack Create.exe를 다시 실행해 주세요. 만들던 팩 구성은 저장되어 있습니다.</p>
+  <p>이 창을 닫고 Osu!Mania MPC.exe를 다시 실행해 주세요. 만들던 팩 구성은 저장되어 있습니다.</p>
 </div>
 
 <script src="editor.js"></script>
 <script src="app.js"></script>
 <script src="parts.js"></script>
+<script src="edit.js"></script>
 </body>
 </html>

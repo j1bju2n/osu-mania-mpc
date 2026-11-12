@@ -26,7 +26,7 @@ from .winicon import WindowIcon
 
 log = logging.getLogger('mpc.server')
 STATIC = {'/': 'index.html', '/app.css': 'app.css', '/app.js': 'app.js', '/editor.js': 'editor.js',
-          '/parts.js': 'parts.js'}
+          '/parts.js': 'parts.js', '/edit.js': 'edit.js'}
 TYPES = {'.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
          '.js': 'text/javascript; charset=utf-8', '.ico': 'image/x-icon',
          '.svg': 'image/svg+xml', '.webp': 'image/webp'}
@@ -214,6 +214,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(target, ASSET_TYPES, 'private, max-age=86400') if target else self._send(404)
         if path == '/api/export/status':
             return self._json(core.export_status())
+        if path == '/api/saves':
+            return self._json(core.save_list())
+        if path == '/api/set':
+            found = core.set_detail(arg('md5'))
+            return self._json(found) if found else self._json({'error': 'not found'}, 404)
         self._json({'error': 'not found'}, 404)
 
     # ---- POST
@@ -269,6 +274,20 @@ class Handler(BaseHTTPRequestHandler):
             result['ok'] = core.export_run(str(body.get('job') or ''))
         elif path == '/api/export/cancel':
             core.export_cancel()
+        elif path == '/api/check':
+            md5s = body.get('md5s') if isinstance(body.get('md5s'), list) else []
+            missing = core.missing(md5s[:5000])
+            result.update({'ready': missing is not None, 'missing': missing or []})
+        elif path == '/api/save':
+            name = str(body.get('name') or '')
+            if not body.get('overwrite') and core.save_exists(name):
+                result = {'ok': False, 'exists': True}
+            else:
+                result = core.save_write(name, body.get('project'))
+        elif path == '/api/save/load':
+            result = core.save_read(str(body.get('name') or ''))
+        elif path == '/api/save/delete':
+            result['ok'] = core.save_delete(str(body.get('name') or ''))
         elif path == '/api/open':
             result['ok'] = core.open_folder(str(body.get('what') or ''))
         else:

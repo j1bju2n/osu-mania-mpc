@@ -270,6 +270,10 @@
     try { detail = await M.api('/api/map?md5=' + md5); } catch (e) { /* reported below */ }
     if (!detail || detail.error) { if (S.view === 'rate') M.toast('이 맵의 파일을 찾지 못했습니다.'); return; }
     if (rc().md5 !== md5) { rc().md5 = md5; M.changed(); }
+    if (!R.detail || R.detail.md5 !== md5) {             // a new map: suggest a BPM range around its own BPM
+      $('rcBpmFrom').value = detail.bpm ? String(Math.round(detail.bpm * 1.1)) : '';
+      $('rcBpmTo').value = detail.bpm ? String(Math.round(detail.bpm * 1.5)) : '';
+    }
     R.detail = detail;
     R.ratings = {};
     renderRate();
@@ -303,6 +307,35 @@
     M.changed();
     renderRate();
     fetchRatings();
+    return added;
+  }
+
+  /* BPM values instead of rates: each becomes the rate that brings the map's main BPM to it. */
+  function addBpms(list) {
+    const base = R.detail && R.detail.bpm;
+    if (!base) { M.toast('이 맵의 BPM을 알 수 없어 BPM으로는 넣을 수 없습니다.'); return; }
+    const fits = r => Math.round(r * 100) / 100 >= 0.5 && Math.round(r * 100) / 100 <= 2;
+    const rates = list.map(bpm => bpm / base), inside = rates.filter(fits), outside = rates.length - inside.length;
+    const range = M.fmtBpm(base * 0.5) + ' ~ ' + M.fmtBpm(base * 2) + ' BPM';
+    if (!inside.length) { M.toast('이 맵은 ' + range + ' 사이로만 만들 수 있습니다 (배속 0.50 ~ 2.00).'); return; }
+    const added = addRates(inside);
+    if (outside && added) M.toast(range + '을 벗어나는 BPM ' + outside + '개는 넣지 않았습니다.');
+  }
+
+  function addBpmRange() {
+    const num = id => parseFloat($(id).value.replace(',', '.'));
+    let from = num('rcBpmFrom'), to = num('rcBpmTo');
+    const step = num('rcBpmStep');
+    if (!isFinite(from) || !isFinite(to) || !(step >= 0.1)) { M.toast('시작 BPM, 끝 BPM, 간격을 숫자로 적어 주세요.'); return; }
+    if (from > to) [from, to] = [to, from];
+    const list = [];
+    for (let i = 0; i < 400; i++) {
+      const v = from + step * i;
+      if (v > to + 1e-9) break;
+      list.push(v);
+    }
+    if (list.length > 60) { M.toast('한 번에 60개까지만 넣을 수 있습니다. 간격을 넓혀 주세요.'); return; }
+    addBpms(list);
   }
 
   function addRange() {
@@ -423,6 +456,9 @@
     $('rcFacts').textContent = ['[' + d.version + ']', '제작자 ' + d.creator, M.fmtTime(d.lengthMs), M.bpmText(d, 1) + ' BPM', d.keys + 'K',
       d.hasAudio ? '' : '오디오 파일 없음'].filter(Boolean).join('     ');
 
+    $('rcBpmNote').textContent = d.bpm
+      ? '이 맵의 BPM은 ' + M.fmtBpm(d.bpm) + '입니다. 배속은 소수점 둘째 자리까지라, 딱 떨어지지 않는 BPM은 가장 가까운 배속으로 들어갑니다 (실제 BPM은 아래 표에 나옵니다).'
+      : '이 맵의 BPM을 알 수 없어 BPM으로는 넣을 수 없습니다.';
     const list = $('rcList');
     list.textContent = '';
     $('rcNone').hidden = c.rates.length > 0;
@@ -494,6 +530,11 @@
     $('rcOne').addEventListener('keydown', ev => { if (ev.key === 'Enter') one(); });
     for (const id of ['rcFrom', 'rcTo', 'rcStep']) $(id).addEventListener('keydown', ev => { if (ev.key === 'Enter') addRange(); });
     $('rcClear').addEventListener('click', () => { c().rates = []; M.changed(); renderRate(); });
+    $('rcAddBpm').addEventListener('click', addBpmRange);
+    const oneBpm = () => { const v = parseFloat($('rcBpmOne').value.replace(',', '.')); if (isFinite(v)) { addBpms([v]); $('rcBpmOne').value = ''; } };
+    $('rcAddBpmOne').addEventListener('click', oneBpm);
+    $('rcBpmOne').addEventListener('keydown', ev => { if (ev.key === 'Enter') oneBpm(); });
+    for (const id of ['rcBpmFrom', 'rcBpmTo', 'rcBpmStep']) $(id).addEventListener('keydown', ev => { if (ev.key === 'Enter') addBpmRange(); });
     document.querySelectorAll('input[name="rcStyle"]').forEach(r => r.addEventListener('change', () => { c().naming.style = r.value; M.changed(); renderRate(); }));
     $('rcTemplate').addEventListener('input', ev => { c().naming.template = ev.target.value; M.changed(); });
     $('rcTemplate').addEventListener('change', renderRate);
