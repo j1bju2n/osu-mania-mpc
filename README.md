@@ -40,6 +40,7 @@ osu! 폴더는 읽기만 하고, 인터넷으로 아무것도 보내지 않습�
 
 ## 개발
 Python 3.13, 표준 라이브러리만 사용합니다. 화면은 127.0.0.1 서버 + Edge/Chrome 앱 창입니다.
+Claude Fable 5.2 모델을 사용해 제작되었습니다.
 
 ```
 python tests/test_core.py
