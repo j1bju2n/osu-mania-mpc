@@ -119,7 +119,8 @@ osu!mania 맵팩 제작 도구. 레퍼런스는 `Desktop/MapPackCreator`(구형,
     (없으면 팩 태그). delete 난이도는 공통 태그. 기존 맵팩 수정에서 "메타데이터도 통일"을 끈 그대로 둔 난이도에는 적용되지 않는다.
     **주의**: 공개된 업로드 서버(`BeatmapPackageParser.getSingleValueFrom`)는 난이도마다 Tags가 다르면
     "inconsistent Tags"로 거부한다. stable 서버가 같은지는 확인 못 함 → 내보내기 때 경고만 띄운다(막지는 않음).
-  - GitHub 공개 (`j1bju2n/osu-mania-mpc`): 올리기 전에 커밋 기록에서 예전 `mmr-calc.exe`(Windows 계정 이름이 든 빌드)를
+  - GitHub (`j1bju2n/osu-mania-mpc`, **비공개로 올림**: 공개 저장소 만들기는 권한 검사에서 막혀 공개 전환은 오너가 직접 한다.
+    릴리스 `v0.6.0`에 공유 zip을 `Osu-Mania-MPC-v<버전>-win-x64.zip` 이름으로 붙임. 프로젝트 자체의 LICENSE는 아직 없음 = 오너가 정할 것): 올리기 전에 커밋 기록에서 예전 `mmr-calc.exe`(Windows 계정 이름이 든 빌드)를
     지금 것으로 바꿔 다시 썼다. **공개 전 점검**: `python tools/scan_private.py`로 exe를, `git grep`으로 계정 이름·경로를 확인.
 
 ## 구조
