@@ -4,6 +4,8 @@ This program is put together from the following parts.
 
 Osu!Mania MPC itself
   Written for Tamania. The program reads the osu! folder and never changes it, and sends nothing over the network.
+  This is an unofficial community tool. It is not affiliated with, endorsed by or approved by ppy Pty Ltd or the
+  osu! team. "osu!" belongs to ppy Pty Ltd.
 
 Mania Tracker  (https://github.com/aleju03/mania-hub, MIT License, Copyright (c) 2026 aleju03)
   - dan-calc: the difficulty (MSD / dan) estimator, built unchanged into mmr-calc.exe inside the program.
@@ -12,11 +14,22 @@ Mania Tracker  (https://github.com/aleju03/mania-hub, MIT License, Copyright (c)
     backgrounds (Arkman, sunnyxxy) and the 7K ladder is the JinJin 7K courses: those marks belong to
     their course authors.
   The licence text is in "Mania Tracker (dan-calc, dan symbols) - MIT.txt".
+  The dan courses those symbols stand for were made by their own authors (as named by Mania Tracker):
+  4K Dan ~ REFORM ~ (Thaumiel), 4K LN dan v2 (_underjoy), 7K regular and LN dan (Jinjin), 6K regular dan (Arkman),
+  6K LN dan ([Crz]sunnyxxy). No reuse terms from the course authors were found; the course names and marks stay
+  theirs. If you are one of them and want a symbol removed from this program, say so and it will be taken out.
+  dan-calc also carries work it names itself: LeoBlack's osumania_map_analyser (MIT), which builds on Sunny's
+  Star-Rating-Rebirth, Daniel (TheBagelOfMan, MIT), the Companella dan model (Leinadix, MIT), the Interlude
+  calculator from YAVSRG prelude (percyqaz, MIT), and MinaCalc from Etterna (https://github.com/etternagame/etterna, MIT).
 
 FFmpeg  (https://ffmpeg.org, GNU General Public License v3 or later)
-  ffmpeg.exe is shipped next to the program and run as a separate program. See "FFmpeg - GPL v3.txt".
+  ffmpeg.exe is shipped next to the program, unmodified, and run as a separate program: the "release essentials"
+  build from https://www.gyan.dev/ffmpeg/builds/ (its version and build options are printed in "FFmpeg - GPL v3.txt").
+  Source code for that version: https://ffmpeg.org/download.html and https://github.com/FFmpeg/FFmpeg (the tag
+  with the same version number); the gyan.dev page names the exact commit and the libraries built in.
+  The GPL covers ffmpeg.exe only, not Osu!Mania MPC.
 
-Python  (https://www.python.org, Python Software Foundation License)
+Python  (https://www.python.org, Python Software Foundation License, see "Python - PSF licence.txt")
   The program is packaged with PyInstaller (https://pyinstaller.org, GPL with a bootloader exception),
   which places the Python runtime inside Osu!Mania MPC.exe.
 

@@ -80,6 +80,9 @@ New-Item -ItemType Directory -Force $lic | Out-Null
 Copy-Item (Join-Path $root 'src\mpc\web\dans\LICENSE.txt') (Join-Path $lic 'Mania Tracker (dan-calc, dan symbols) - MIT.txt') -Force
 Copy-Item (Join-Path $root 'src\mpc\bin\THIRD-PARTY-LICENSES.txt') (Join-Path $lic 'mmr-calc - third party licenses.txt') -Force
 Copy-Item (Join-Path $root 'docs\NOTICE.txt') (Join-Path $lic 'NOTICE.txt') -Force
+$pyLicense = Join-Path (& python -c "import sys; print(sys.base_prefix)") 'LICENSE.txt'
+if (Test-Path $pyLicense) { Copy-Item $pyLicense (Join-Path $lic 'Python - PSF licence.txt') -Force }
+else { Write-Warning 'Python LICENSE.txt was not found: the share zip will not carry the Python licence.' }
 if (Test-Path $ffTarget) {
     $ffInfo = @('ffmpeg.exe in this folder is FFmpeg, a separate program that Osu!Mania MPC runs to convert audio.',
                 'It is licensed under the GNU General Public License version 3 or later.',
